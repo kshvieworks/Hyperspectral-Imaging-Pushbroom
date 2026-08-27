@@ -1,0 +1,87 @@
+Help on package pecamerapy:
+NAME
+    pecamerapy
+DESCRIPTION
+    Python API for PeCamera
+    Usage:
+        Create a Camera() handler and then use method on said object. First open a camera on this handler before any other method.
+        
+        ex:
+    
+            camera = pecamerapy.Camera() # equivalent to PEC_CREATE()
+    
+            camera.open(0, OpenMode.USB3)
+    
+        The signature of every method can be deduced from the c++ methods of `Zephir - SDK User Manual`.
+        To work with PeCameraPy methods, note that:
+    
+            - Every Python method use the snake_case convention instead of CamelCase.
+            - Error code are not returned but instead thrown as Exception.
+            - In-place arguments are returned as tuple instead (as many Python object are immutable) or as a single argument
+            if there's only one argument.
+            - 'size' arguments that specify length of strings are not used anymore.
+            - Callback are not currently available. One must use `capture` and `get_image` to capture images.
+            - `capture` and `captureVideo` have a new `pythonBufferSize` argument which controls a circular buffer
+            that accumulates the images of the c++ sdk.
+    
+        ex:
+    
+            c++'s findFirst method:
+    
+                `int res = pec->findFirst(PeCamera::OpenMode mode, int* index, char* serial, int size)`
+            
+            becomes python's find_first method:
+    
+            try:
+    
+                index, serial =  camera.find_first(PeCamera.OpenMode.USB3)
+    
+            except Exception as e:
+    
+                print(f"error while connecting: {e}")
+    
+        ex:
+    
+            camera.find_first() will return (index, serial).
+    
+            camera.get_metadata_enabled() will return a bool.
+PACKAGE CONTENTS
+    _version
+    include (package)
+DATA
+    BOTH_AXIS_FLIP = <SensorOrientation.BOTH_AXIS_FLIP: 3>
+    CDS = <ImageMode.CDS: 2>
+    COMM_SERIAL = <OpenMode.COMM_SERIAL: 0>
+    GENERIC_OUTPUT_MODE_EXPOSURE = <GenericOutputMode.GENERIC_OUTPUT_MODE_...
+    GENERIC_OUTPUT_MODE_HIGH = <GenericOutputMode.GENERIC_OUTPUT_MODE_HIGH...
+    GENERIC_OUTPUT_MODE_LOW = <GenericOutputMode.GENERIC_OUTPUT_MODE_LOW: ...
+    GENERIC_OUTPUT_MODE_READOUT = <GenericOutputMode.GENERIC_OUTPUT_MODE_R...
+    GENERIC_OUTPUT_MODE_READY = <GenericOutputMode.GENERIC_OUTPUT_MODE_REA...
+    GENERIC_OUTPUT_POLARITY_NEGATIVE = <GenericOutputPolarity.GENERIC_OUTP...
+    GENERIC_OUTPUT_POLARITY_POSITIVE = <GenericOutputPolarity.GENERIC_OUTP...
+    HORIZONTAL_FLIP = <SensorOrientation.HORIZONTAL_FLIP: 2>
+    IMRO = <ImageMode.IMRO: 3>
+    ITR = <ReadingMode.ITR: 0>
+    IWR = <ReadingMode.IWR: 1>
+    LNIM = <ImageMode.LNIM: 1>
+    NOINVERT = <SensorOrientation.NOINVERT: 0>
+    PROP_GAIN = <Property.PROP_GAIN: 0>
+    PROP_IMAGE_MODE = <Property.PROP_IMAGE_MODE: 1>
+    PROP_PIXEL_DEPTH = <Property.PROP_PIXEL_DEPTH: 2>
+    PROP_PIXEL_RATE = <Property.PROP_PIXEL_RATE: 4>
+    PROP_READING_MODE = <Property.PROP_READING_MODE: 3>
+    READY = <Status.READY: 1>
+    ROI_HARDWARE = <RoiMode.ROI_HARDWARE: 1>
+    ROI_SOFTWARE = <RoiMode.ROI_SOFTWARE: 0>
+    SAPERA_FRAME_GRABBER = <OpenMode.SAPERA_FRAME_GRABBER: 1>
+    STANDARD = <ImageMode.STANDARD: 0>
+    TRIGGER_BURST_FALLING_EDGE = <TriggerMode.TRIGGER_BURST_FALLING_EDGE: ...
+    TRIGGER_BURST_RISING_EDGE = <TriggerMode.TRIGGER_BURST_RISING_EDGE: 3>
+    TRIGGER_FALLING_EDGE = <TriggerMode.TRIGGER_FALLING_EDGE: 2>
+    TRIGGER_NONE = <TriggerMode.TRIGGER_NONE: 0>
+    TRIGGER_RISING_EDGE = <TriggerMode.TRIGGER_RISING_EDGE: 1>
+    UNAVAILABLE = <Status.UNAVAILABLE: 0>
+    USB2 = <OpenMode.USB2: 3>
+    USB3 = <OpenMode.USB3: 2>
+    VERTICAL_FLIP = <SensorOrientation.VERTICAL_FLIP: 1>
+    __version_info__ = ('4', '10', '0')

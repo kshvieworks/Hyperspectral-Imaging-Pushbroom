@@ -1,0 +1,484 @@
+class Camera(pybind11_builtins.pybind11_object)
+ |  Method resolution order:
+ |      Camera
+ |      pybind11_builtins.pybind11_object
+ |      builtins.object
+ |  
+ |  Methods defined here:
+ |  
+ |  __init__(...)
+ |      __init__(self: pecamerapy.include._pecamerapy.Camera) -> None
+ |  
+ |  abort(...)
+ |      abort(self: pecamerapy.include._pecamerapy.Camera) -> None
+ |      
+ |      Abort the capture after the frame in progress has finished transferring.
+ |      It is possible to abort a frame while the camera is exposing, but not while it is transferring the frame.
+ |      This method is identical to calling capture(0).
+ |  
+ |  capture(...)
+ |      capture(self: pecamerapy.include._pecamerapy.Camera, frames: int, pythonBufferSize: int) -> None
+ |      
+ |      Captures a finite number of frames or start/stop continuous capture. The value of the `frames` parameter defines the number of frames that will be acquired by the camera.The value of the `pythonBufferSize` parameter defines the size of the circular buffer that stores the frames produced by the underlying c++ layer. A large buffer ensures that no frame are lost. Keep in mind that this circular buffer is different from the frame grabber buffer. It is possible to abort a frame while the camera is exposing, but not while it is transferring the frame.A frame aborted during the exposure will not be transferred and therefore will not be added in the buffer.
+ |  
+ |  capture_video(...)
+ |      capture_video(self: pecamerapy.include._pecamerapy.Camera, pythonBufferSize: int) -> None
+ |      
+ |      Captures a continuous stream of frames. The frames are taken as fast as the camera can output them. The value of the `pythonBufferSize` parameter defines the size of the circular buffer that stores the frames produced by the underlying c++ layer. A large buffer ensures that no frame are lost. Keep in mind that this circular buffer is different from the frame grabber buffer.
+ |  
+ |  close(...)
+ |      close(self: pecamerapy.include._pecamerapy.Camera) -> None
+ |      
+ |      Close the communication channel in use and resets the camera state.
+ |      Before calling this method, it is important to stop any ongoing acquisition.
+ |      It is recommended to properly close the camera with a software shutdown before unplugging the camera power.
+ |  
+ |  delete_buffer(...)
+ |      delete_buffer(self: pecamerapy.include._pecamerapy.Camera) -> None
+ |      
+ |      Free the previously allocated memory.
+ |      Only used in frame grabber mode.
+ |  
+ |  find_first(...)
+ |      find_first(self: pecamerapy.include._pecamerapy.Camera, mode: pecamerapy.include._pecamerapy.OpenMode) -> Tuple[int, str]
+ |      
+ |      Search for the first connected camera supported by PeCamera according to the desired
+ |      open mode. The method finds the first camera available for opening, therefore  
+ |      already opened cameras are not considered in the search.
+ |      
+ |      param mode: Communicating interface (See Open function)
+ |      Returns:
+ |         - tuple: (index, serial)
+ |             - int: index is the address of the first camera found.
+ |             - str: serial is the string uniquely identifying a camera.
+ |  
+ |  find_next(...)
+ |      find_next(self: pecamerapy.include._pecamerapy.Camera, mode: pecamerapy.include._pecamerapy.OpenMode) -> Tuple[int, str]
+ |      
+ |      Search for the next connected camera until the end of the communication channels list
+ |      according to the desired open mode. When the end of the list is reached, the method returns
+ |      an error. find_next is not affected by a usage of find_first.
+ |      Returns:
+ |         - tuple: (index, serial)
+ |             - int: index is the address of the camera found in the list.
+ |             - str: serial is the string uniquely identifying a camera.
+ |  
+ |  get_bias_correction_enabled(...)
+ |      get_bias_correction_enabled(self: pecamerapy.include._pecamerapy.Camera) -> bool
+ |      
+ |      Get the activation status for the bias correction processing.
+ |  
+ |  get_detector_mode(...)
+ |      get_detector_mode(self: pecamerapy.include._pecamerapy.Camera) -> int
+ |      
+ |      Get the current detector mode index of the camera. A specific mode
+ |      is a set made up of several elements : gain, image mode, pixel depth, 
+ |      reading mode and pixel rate.To query the API about the properties 
+ |      of a mode that constitutes it up, refer to get_detector_mode_property* methods.
+ |  
+ |  get_detector_mode_count(...)
+ |      get_detector_mode_count(self: pecamerapy.include._pecamerapy.Camera) -> int
+ |      
+ |      Get the number of supported detector mode. Refer to get_detector_mode for details
+ |      on detector modes.
+ |  
+ |  get_detector_mode_property_count(...)
+ |      get_detector_mode_property_count(self: pecamerapy.include._pecamerapy.Camera, index: int) -> int
+ |      
+ |      Get the number of properties for a desired mode index.
+ |  
+ |  get_detector_mode_property_list(...)
+ |      get_detector_mode_property_list(self: pecamerapy.include._pecamerapy.Camera, index: int) -> list
+ |      
+ |      Get the list of properties for a desired mode index.
+ |      The array given must be large enough to contain all the modes (See getDetectorModePropertyCount).
+ |      Refer to the Property enum for all the supported property.
+ |  
+ |  get_detector_mode_property_value(...)
+ |      get_detector_mode_property_value(self: pecamerapy.include._pecamerapy.Camera, index: int, property: pecamerapy.include._pecamerapy.Property) -> int
+ |      
+ |      Get the current value of a specific property of a specific index mode.
+ |      Depending on the property type, the value may need to be casted.
+ |  
+ |  get_detector_size(...)
+ |      get_detector_size(self: pecamerapy.include._pecamerapy.Camera) -> Tuple[int, int]
+ |      
+ |      Get the camera detector size which is fixed for a given camera.
+ |  
+ |  get_exposure_time(...)
+ |      get_exposure_time(self: pecamerapy.include._pecamerapy.Camera) -> float
+ |      
+ |      Get the current exposure time in seconds. It is the effective exposure time after considering the camera time resolution.
+ |  
+ |  get_exposure_time_range(...)
+ |      get_exposure_time_range(self: pecamerapy.include._pecamerapy.Camera) -> Tuple[float, float, float]
+ |      
+ |      Get the valid exposure time range with the time resolution (in seconds).
+ |  
+ |  get_exposure_trigger(...)
+ |      get_exposure_trigger(self: pecamerapy.include._pecamerapy.Camera) -> bool
+ |      
+ |      Returns true if the exposure is controlled by an external trigger.
+ |  
+ |  get_exposure_trigger_available(...)
+ |      get_exposure_trigger_available(self: pecamerapy.include._pecamerapy.Camera) -> bool
+ |      
+ |      Returns true if the exposure controlled by trigger is available.
+ |  
+ |  get_firmware_version(...)
+ |      get_firmware_version(self: pecamerapy.include._pecamerapy.Camera) -> str
+ |      
+ |      Get the firmware version of the camera.
+ |      The returned string is the firmware name followed by its version number like in this example: "name-0.0.0".
+ |      The firmware version is given for an informative purpose only and should not be used to check for specific camera functionalities.
+ |  
+ |  get_flatfield_enabled(...)
+ |      get_flatfield_enabled(self: pecamerapy.include._pecamerapy.Camera) -> bool
+ |      
+ |      Get the activation status for the flat-field processing.
+ |  
+ |  get_frame_rate(...)
+ |      get_frame_rate(self: pecamerapy.include._pecamerapy.Camera) -> float
+ |      
+ |      Get the current camera frame rate.
+ |  
+ |  get_frame_rate_max(...)
+ |      get_frame_rate_max(self: pecamerapy.include._pecamerapy.Camera) -> float
+ |      
+ |      Get the maximum number of frames per second limitation.
+ |  
+ |  get_frame_rate_max_enabled(...)
+ |      get_frame_rate_max_enabled(self: pecamerapy.include._pecamerapy.Camera) -> bool
+ |      
+ |      Get the state of the frame rate limitation.
+ |  
+ |  get_generic_output_count(...)
+ |      get_generic_output_count(self: pecamerapy.include._pecamerapy.Camera) -> int
+ |      
+ |      Get the number of generic output for the camera.
+ |      These outputs may be use for sync external device to the camera, or to control an external shutter for example.
+ |  
+ |  get_generic_output_mode(...)
+ |      get_generic_output_mode(self: pecamerapy.include._pecamerapy.Camera, index: int) -> pecamerapy.include._pecamerapy.GenericOutputMode
+ |      
+ |      Get the generic output mode.
+ |  
+ |  get_generic_output_mode_count(...)
+ |      get_generic_output_mode_count(self: pecamerapy.include._pecamerapy.Camera) -> int
+ |      
+ |      Get the number of generic output modes available for the camera.
+ |  
+ |  get_generic_output_mode_list(...)
+ |      get_generic_output_mode_list(self: pecamerapy.include._pecamerapy.Camera) -> list
+ |      
+ |      Get the available generic output modes for the camera.
+ |      The array given must be large enough to contain all the modes(See getGenericOutputModeCount).
+ |  
+ |  get_generic_output_polarity(...)
+ |      get_generic_output_polarity(self: pecamerapy.include._pecamerapy.Camera, index: int) -> pecamerapy.include._pecamerapy.GenericOutputPolarity
+ |      
+ |      Get the generic output polarity.
+ |  
+ |  get_image(...)
+ |      get_image(self: pecamerapy.include._pecamerapy.Camera, timeout_sec: int) -> Tuple[numpy.ndarray[numpy.uint16], pecamerapy.include._pecamerapy.Metadata]
+ |      
+ |      Get an image and receive the corresponding matrix array and the associated metadata as a tuple. If `timeout_sec>0`,
+ |      the method will throw an exception if the timeout is reached. `timeout_sec = -1` will indefinitely block.
+ |      `capture` should be called before `get_image` (or while get_image is waiting) to produce an image
+ |  
+ |  get_library_version(...)
+ |      get_library_version(self: pecamerapy.include._pecamerapy.Camera, arg0: pecamerapy.include._pecamerapy.OpenMode, arg1: str) -> int
+ |      
+ |      Get the version number of the library currently in use. The version number is formatted 
+ |      following this formula: 
+ |      (major << 16) + (minor << 8) + bugfix
+ |      For example, the library version 1.20.30 will return 0x01141E.
+ |      Equivalent to PEC_GetLibraryVersion.
+ |  
+ |  get_metadata_enabled(...)
+ |      get_metadata_enabled(self: pecamerapy.include._pecamerapy.Camera) -> bool
+ |      
+ |      Get the state of the metadata availability in each frame.
+ |  
+ |  get_model_name(...)
+ |      get_model_name(self: pecamerapy.include._pecamerapy.Camera) -> str
+ |      
+ |      Get the commercial model name of the camera.
+ |  
+ |  get_pixel_rate(...)
+ |      get_pixel_rate(self: pecamerapy.include._pecamerapy.Camera) -> int
+ |      
+ |      Get the readout speed for the camera.
+ |  
+ |  get_pixel_rate_count(...)
+ |      get_pixel_rate_count(self: pecamerapy.include._pecamerapy.Camera) -> int
+ |      
+ |      Get the number of pixel rates available for the camera.
+ |  
+ |  get_pixel_rate_list(...)
+ |      get_pixel_rate_list(self: pecamerapy.include._pecamerapy.Camera) -> list
+ |      
+ |      Get the available pixel rates for the camera in decreasing order.
+ |      The array given must be large enough to contain all the depths (See getPixelRateCount).
+ |  
+ |  get_pixel_replacement_enabled(...)
+ |      get_pixel_replacement_enabled(self: pecamerapy.include._pecamerapy.Camera) -> bool
+ |      
+ |      Get the activation status for the pixel replacement processing.
+ |  
+ |  get_pixel_size(...)
+ |      get_pixel_size(self: pecamerapy.include._pecamerapy.Camera) -> Tuple[float, float]
+ |      
+ |      Get the size of a pixel, this size is fixed for a given camera.Returns:
+ |         - tuple: (width, height)
+ |             - int: width
+ |             - int: height
+ |  
+ |  get_roi(...)
+ |      get_roi(self: pecamerapy.include._pecamerapy.Camera) -> Tuple[int, int, int, int]
+ |      
+ |      Get the effective region of interest for the camera.
+ |      Returns:
+ |         - tuple: (left, top, width, height)
+ |             - int: left
+ |             - int: top
+ |             - int: width
+ |             - int: height
+ |  
+ |  get_roi_mode(...)
+ |      get_roi_mode(self: pecamerapy.include._pecamerapy.Camera) -> pecamerapy.include._pecamerapy.RoiMode
+ |      
+ |      Get the ROI (region of interest) mode for the camera.
+ |  
+ |  get_roi_mode_count(...)
+ |      get_roi_mode_count(self: pecamerapy.include._pecamerapy.Camera) -> int
+ |      
+ |      Get the number of ROI (region of interest) modes available for the camera.
+ |  
+ |  get_roi_mode_list(...)
+ |      get_roi_mode_list(self: pecamerapy.include._pecamerapy.Camera) -> list
+ |      
+ |      Get the available ROI (region of interest) modes for the camera.
+ |      The array given must be large enough to contain all the modes (See getRoiModeCount).
+ |  
+ |  get_sensor_orientation(...)
+ |      get_sensor_orientation(self: pecamerapy.include._pecamerapy.Camera) -> pecamerapy.include._pecamerapy.SensorOrientation
+ |      
+ |      Get the sensor orientation
+ |  
+ |  get_serial_number(...)
+ |      get_serial_number(self: pecamerapy.include._pecamerapy.Camera) -> str
+ |      
+ |      Get the serial number of the camera.
+ |  
+ |  get_skimming_enabled(...)
+ |      get_skimming_enabled(self: pecamerapy.include._pecamerapy.Camera) -> bool
+ |      
+ |      Get the activation status of the skimming level.
+ |  
+ |  get_skimming_level(...)
+ |      get_skimming_level(self: pecamerapy.include._pecamerapy.Camera) -> int
+ |      
+ |      Get the skimming level applied on each pixel.
+ |  
+ |  get_skimming_level_range(...)
+ |      get_skimming_level_range(self: pecamerapy.include._pecamerapy.Camera) -> Tuple[int, int]
+ |      
+ |      Get the limits of the skimming level accepted by the cameras.
+ |  
+ |  get_status(...)
+ |      get_status(self: pecamerapy.include._pecamerapy.Camera) -> pecamerapy.include._pecamerapy.Status
+ |      
+ |      Get the camera status.
+ |      The status is usually polled to know if the detector can be safely exposed.
+ |      If the temperature rises above a defined threshold value, the camera will automatically become unavailable.
+ |      To recover from such a state, the camera must be able to reach its safety threshold and the camera must be reopened.
+ |  
+ |  get_target_temperature(...)
+ |      get_target_temperature(self: pecamerapy.include._pecamerapy.Camera) -> float
+ |      
+ |      Get the effective target temperature of the camera (in °C).
+ |  
+ |  get_target_temperature_range(...)
+ |      get_target_temperature_range(self: pecamerapy.include._pecamerapy.Camera) -> Tuple[float, float, float]
+ |      
+ |      Get the valid target temperature range for the camera (in °C).
+ |  
+ |  get_temperature(...)
+ |      get_temperature(self: pecamerapy.include._pecamerapy.Camera) -> float
+ |      
+ |      Get the camera detector temperature (in °C).
+ |  
+ |  get_trigger_mode(...)
+ |      get_trigger_mode(self: pecamerapy.include._pecamerapy.Camera) -> pecamerapy.include._pecamerapy.TriggerMode
+ |      
+ |      Get the trigger mode for the camera.
+ |  
+ |  get_trigger_mode_count(...)
+ |      get_trigger_mode_count(self: pecamerapy.include._pecamerapy.Camera) -> int
+ |      
+ |      Get the number of trigger modes available for the camera.
+ |  
+ |  get_trigger_mode_list(...)
+ |      get_trigger_mode_list(self: pecamerapy.include._pecamerapy.Camera) -> list
+ |      
+ |      Get the available trigger modes for the camera.
+ |      The array given must be large enough to contain all the modes (See getTriggerModeCount).
+ |  
+ |  is_open(...)
+ |      is_open(self: pecamerapy.include._pecamerapy.Camera) -> bool
+ |      
+ |      Returns:
+ |         -bool: True if camera is opened, False otherwise
+ |  
+ |  new_buffer(...)
+ |      new_buffer(self: pecamerapy.include._pecamerapy.Camera, count: int) -> None
+ |      
+ |      Allocate enough memory to contain an image and all its meta-data.
+ |      Only used in frame grabber mode.
+ |      Trade-off between memory usage and the risk of loss of frames.
+ |      50 is generally an adequate value, can be reduced to 5-10 if hardware ROI is not used.
+ |  
+ |  open(...)
+ |      open(self: pecamerapy.include._pecamerapy.Camera, index: int, mode: pecamerapy.include._pecamerapy.OpenMode) -> None
+ |      
+ |      Returns:
+ |         - int: res 0 if successful, PeCamera error code otherwise
+ |  
+ |  search(...)
+ |      search(self: pecamerapy.include._pecamerapy.Camera, mode: pecamerapy.include._pecamerapy.OpenMode, serial: str) -> int
+ |      
+ |      Search for the camera with the matching serial number based on the desired opening 
+ |      mode. The function scans all opening mode available communication channels and probes
+ |       for a matching serial number. The serial parameter is case sensitive. If the matching
+ |      camera is already opened or is not found, the search will fail and the function will return an error.
+ |      Equivalent to PEC_Search.
+ |  
+ |  set_bias_correction(...)
+ |      set_bias_correction(self: pecamerapy.include._pecamerapy.Camera, bias: numpy.ndarray[numpy.float32], width: int, height: int) -> None
+ |      
+ |      Set the bias correction map.
+ |  
+ |  set_bias_correction_enabled(...)
+ |      set_bias_correction_enabled(self: pecamerapy.include._pecamerapy.Camera, enable: bool) -> None
+ |      
+ |      Set the activation status of the bias correction processing.
+ |      A valid correction map must have been set before calling this method.
+ |  
+ |  set_detector_mode(...)
+ |      set_detector_mode(self: pecamerapy.include._pecamerapy.Camera, index: int) -> None
+ |      
+ |      Set the detector mode index of the camera. Refer to get_detector_mode for details
+ |      on detector modes.
+ |  
+ |  set_exposure_time(...)
+ |      set_exposure_time(self: pecamerapy.include._pecamerapy.Camera, time_sec: float) -> None
+ |      
+ |      Set the exposure time for the next frame.
+ |      If a given time is below the camera time resolution, it will be truncated to the nearest multiple.
+ |  
+ |  set_exposure_trigger(...)
+ |      set_exposure_trigger(self: pecamerapy.include._pecamerapy.Camera, enable: bool) -> None
+ |      
+ |      Set the exposure to be controlled by an external trigger or not.
+ |  
+ |  set_flatfield(...)
+ |      set_flatfield(self: pecamerapy.include._pecamerapy.Camera, gain: numpy.ndarray[numpy.float32], offset: numpy.ndarray[numpy.float32], width: int, height: int) -> None
+ |      
+ |      Set the flat-field correction map.
+ |  
+ |  set_flatfield_enabled(...)
+ |      set_flatfield_enabled(self: pecamerapy.include._pecamerapy.Camera, enable: bool) -> None
+ |      
+ |      Set the activation status of the flat-field processing.
+ |      A valid correction map must have been set before calling this method.
+ |  
+ |  set_frame_rate_max(...)
+ |      set_frame_rate_max(self: pecamerapy.include._pecamerapy.Camera, fps: float) -> None
+ |      
+ |      Set the maximum number of frames per seconds limitation.
+ |  
+ |  set_frame_rate_max_enabled(...)
+ |      set_frame_rate_max_enabled(self: pecamerapy.include._pecamerapy.Camera, enable: bool) -> None
+ |      
+ |      Set the state of the frame rate limitation.
+ |  
+ |  set_generic_output_mode(...)
+ |      set_generic_output_mode(self: pecamerapy.include._pecamerapy.Camera, index: int, mode: pecamerapy.include._pecamerapy.GenericOutputMode) -> None
+ |      
+ |      Set the generic output mode.
+ |  
+ |  set_generic_output_polarity(...)
+ |      set_generic_output_polarity(self: pecamerapy.include._pecamerapy.Camera, index: int, polarity: pecamerapy.include._pecamerapy.GenericOutputPolarity) -> None
+ |      
+ |      Set the generic output polarity.
+ |  
+ |  set_metadata_enabled(...)
+ |      set_metadata_enabled(self: pecamerapy.include._pecamerapy.Camera, enable: bool) -> None
+ |      
+ |      Set the state of the metadata availability in each frame.
+ |      It is not possible to deactivate the metadata encapsulation with the Hyperon firmware.
+ |  
+ |  set_pixel_rate(...)
+ |      set_pixel_rate(self: pecamerapy.include._pecamerapy.Camera, rate_Hz: int) -> None
+ |      
+ |      Set the pixel rate which defines the readout speed.
+ |  
+ |  set_pixel_replacement(...)
+ |      set_pixel_replacement(self: pecamerapy.include._pecamerapy.Camera, map: numpy.ndarray[numpy.int32], width: int, height: int) -> None
+ |      
+ |      Set the activation status of the pixel replacement processing.
+ |      A valid correction map must have been set before calling this method.
+ |  
+ |  set_pixel_replacement_enabled(...)
+ |      set_pixel_replacement_enabled(self: pecamerapy.include._pecamerapy.Camera, enable: bool) -> None
+ |      
+ |      Set the activation status of the pixel replacement processing.
+ |      A valid correction map must have been set before calling this method.
+ |  
+ |  set_roi(...)
+ |      set_roi(self: pecamerapy.include._pecamerapy.Camera, left: int, top: int, width: int, height: int) -> None
+ |      
+ |      Set the region of interest for the camera.
+ |  
+ |  set_roi_mode(...)
+ |      set_roi_mode(self: pecamerapy.include._pecamerapy.Camera, mode: pecamerapy.include._pecamerapy.RoiMode) -> None
+ |      
+ |      Set the ROI (region of interest) mode for the camera.
+ |      In software mode, the full sensor is read, and the software crops the image to provide the area requested by the setROI function.
+ |      In hardware mode, only the requested zone is actually read on the sensor.
+ |      In this mode, it is possible to achieve a higher frame rate (fps).
+ |      However, since the sensor is read differently, the correction made by the flatfield may be less effective.
+ |  
+ |  set_sensor_orientation(...)
+ |      set_sensor_orientation(self: pecamerapy.include._pecamerapy.Camera, orientation: pecamerapy.include._pecamerapy.SensorOrientation) -> None
+ |      
+ |      Set the sensor orientation
+ |  
+ |  set_skimming_enabled(...)
+ |      set_skimming_enabled(self: pecamerapy.include._pecamerapy.Camera, enable: bool) -> None
+ |      
+ |      Set the activation status of the skimming level to be applied on each pixel.
+ |      Not available on recent cameras, present for backward compatibility reasons.
+ |  
+ |  set_skimming_level(...)
+ |      set_skimming_level(self: pecamerapy.include._pecamerapy.Camera, level: int) -> None
+ |      
+ |      Set the skimming level to be applied on each pixel.
+ |      Not available on recent cameras, present for backward compatibility reasons.
+ |  
+ |  set_target_temperature(...)
+ |      set_target_temperature(self: pecamerapy.include._pecamerapy.Camera, temp_celsius: float) -> None
+ |      
+ |      Set the target detector temperature of the camera.
+ |      If the target temperature cannot be reached by the cooler, it settles to the lowest temperature possible in the current environmental conditions.
+ |      The effective target temperature may differ from the one requested.
+ |      To know the effective value, getTargetTemperature method can be called.
+ |  
+ |  set_trigger_mode(...)
+ |      set_trigger_mode(self: pecamerapy.include._pecamerapy.Camera, mode: pecamerapy.include._pecamerapy.TriggerMode) -> None
+ |      
+ |      Set the trigger mode for the camera.
+ |      The trigger mode selects the event that starts the exposure period.
+ |      Setting the trigger mode does not capture any images. It is still required to call capture to receive an image.
+ |  
