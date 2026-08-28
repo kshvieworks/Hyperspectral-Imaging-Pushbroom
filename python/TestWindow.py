@@ -24,26 +24,33 @@ WAVELENGTH_START_NM = 900.0
 WAVELENGTH_END_NM = 1700.0
 
 
-class App(QtWidgets.QMainWindow):
+class App(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.window = MainWindow(self)
+        self.window = HSIWindow(self)
         self.setCentralWidget(self.window)
         self.setWindowTitle("Image Processor")
         self.show()
 
 
-class MainWindow(QtWidgets.QWidget):
+class HSIWindow(QWidget):
     def __init__(self, parent):
-        super(MainWindow, self).__init__(parent)
-    # Import Utility
-        self.FuncUtil = util.WidgetFunction()
-        self.CustomFunction = util.CustomFunction()
+        super(HSIWindow, self).__init__(parent)
+
+    # Import Helper
+
+        self.stage = None
+        self.camera = None
+        self.thread = None
+        self.worker = None
+
+    # Define Cube
+        self.cube = None
 
     # Define Layouts
-        PageLayout = QtWidgets.QVBoxLayout()
-        PreviewLayout = QtWidgets.QHBoxLayout()
-        ConfigLayout = QtWidgets.QVBoxLayout()
+        PageLayout = QVBoxLayout()
+        PreviewLayout =QHBoxLayout()
+        ConfigLayout = QVBoxLayout()
 
         self.init_Layout(PageLayout, PreviewLayout, ConfigLayout)
         self.setLayout(PageLayout)

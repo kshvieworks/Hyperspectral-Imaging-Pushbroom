@@ -1,0 +1,29 @@
+class Camera
+
+1. __init__()
+2. abort()
+* 3. capture()
+4. close()
+5. find_first()
+
+6. get_detector_mode()
+* 7. get_detector_size()
+8. get_flatfield_enabled()
+* 9. get_exposure_time()
+10. get_frame_rate()
+* 11. get_image()
+* 12. get_metadata_enabled()
+13. get_pixel_size()
+14. get_roi()
+15. get_target_temperature_range()
+16. get_temperature()
+17. get_sensor_orientation
+
+17. is_open(
+* 18. open(
+*19. set_exposure_time(
+* 20. set_roi(
+* 21. set_roi_mode
+22. set_sensor_orientation(
+23. set_target_temperaure(
+24. set_flatfield_enabled()

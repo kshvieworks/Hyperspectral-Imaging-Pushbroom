@@ -9,12 +9,25 @@ class Controller:
 
     def open(self):
         mode = self._OpenMode()
-        index, serial_selected = self.camera.find_first(mode)
-        if serial_selected == self.serial:
-            self.camera.open(index, mode)
+        index = self.camera.search(mode, self.serial)
+        self.camera.open(index, mode)
 
+    def Configure(self, exposure_s = 1E-3):
+        self._Configure_ExposureTime(exposure_s)
 
-    @staticmethod
+        self.camera.set_metadata_enabled(True)
+
+    def Acquire_Frame(self):
+        python_buffer_size = 10
+        self.camera.capture(1, python_buffer_size)
+        image, metadata = self.camera.get_image(5)
+        return image, metadata
+
+    def _Configure_ExposureTime(self, exposure_s):
+        self.camera.set_exposure_time(exposure_s)
+
+    def close(self):
+        self.camera.close()
 
     @staticmethod
     def _OpenMode():
