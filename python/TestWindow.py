@@ -6,17 +6,20 @@ import pecamerapy
 import Utility_Pushbroom
 import Utility_Pyqt as Uqt
 
-import CameraControl as CC
+# import CameraControl as CC
 import Utility_Pushbroom as UP
 
 import sys
 import numpy as np
+import multiprocessing as mp
+from queue import Empty
 
-from PyQt6.QtCore import (Qt, QObject, QThread, pyqtSignal, pyqtSlot, QTimer)
+from PyQt6.QtCore import (Qt, QObject, pyqtSignal, pyqtSlot, QTimer)
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
                              QPushButton, QSlider,
                              QDoubleSpinBox, QComboBox, QSpinBox, QGroupBox, QFileDialog, QMessageBox, QLineEdit)
 from qtrangeslider import QRangeSlider
+
 
 
 import pyqtgraph as pg
@@ -50,16 +53,27 @@ class HSIWindow(QWidget):
 
     # Import Helper
         self.stage = None
-        self.camera = None
-        self.thread = None
-        self.worker_camera = None
+
+    # Camera Multiprocessing
+        self.camera_process = None
+        self.camera_frame_queue = None
+        self.camera_status_queue = None
+        self.camera_stop_event = None
+
+        # self.thread = None
+        # self.worker_camera = None
         self.Metadata = None
 
     # Preview Timer
         self.latest_camera_image = None
+        self.camera_image_flag = False
         self.preview_timer = QTimer(self)
-        self.preview_timer.setInterval(50)
+        self.preview_timer.setInterval(100)
         self.preview_timer.timeout.connect(self.__Update_Camera_Preview)
+
+        self.process_timer = QTimer(self)
+        self.process_timer.setInterval(100)
+        self.process_timer.timeout.connect(self.__Poll_Camera_Process)
 
     # Define Cube
         self.cube = None
@@ -102,77 +116,89 @@ class HSIWindow(QWidget):
         self.Config.camera_disconnect_requested.connect(self.Disconnect_Camera)
 
     def Connect_Camera(self, serial):
-        try:
-            self.camera = CC.Controller(serial)
-            self.camera.open()
-            self.init_Camera()
-            self.Config.Connection_Button.setText("Now Connected. Click to Disconnect")
-            self._Start_Camera_Preview()
-        except Exception as e:
-            self.camera = None
-            self.Config.Connection_Button.setText("Now Disconnected. Click to Connect")
-            QMessageBox.critical(self, "Camera Connection Error", f"{type(e).__name__}: {e}")
-
+        if (self.camera_process is not None and self.camera_process.is_alive()):
+            return
+        exposure = self.Config.Exposure_Spinbox.value()
+        fps = self.Config.FPS_Spinbox.value()
+        self.Config.Connection_Button.setEnabled(False)
+        self.Config.Connection_Button.setText("Connecting...")
+        self._Start_Camera_Process(serial = serial, exposure = exposure, fps = fps)
 
     def Disconnect_Camera(self):
-        if (self.thread is not None and self.thread.isRunning()):
-            self.Config.Connection_Button.setEnabled(False)
-            self.Config.Connection_Button.setText("Disconnecting...")
-            self.thread.requestInterruption()
+        if self.camera_process is None:
             return
-        self._Close_Camera()
-
-    def init_Camera(self):
-        exposure = self.Config.Exposure_Spinbox.value()
-        self.camera.Configure(exposure)
+        if not self.camera_process.is_alive():
+            self._Camera_Process_Finished()
+            return
+        self.Config.Connection_Button.setEnabled(False)
+        self.Config.Connection_Button.setText("Disconnecting...")
+        self.camera_stop_event.set()
 
     @pyqtSlot(str)
     def Camera_Error(self, message):
         QMessageBox.critical(self, "Camera Error", f"{message}")
-        self._Close_Camera()
 
-    def Camera_Thread_Finished(self):
-        self.worker_camera = None
-        self.thread = None
-        self._Close_Camera()
+    def _Camera_Process_Finished(self):
+        self.preview_timer.stop()
+        self.process_timer.stop()
 
-    def _Start_Camera_Preview(self):
-        self.thread = QThread(self)
-        self.worker_camera = UP.CameraWorker(self.camera, preview_fps=10)
-        self.worker_camera.moveToThread(self.thread)
-        self.thread.started.connect(self.worker_camera.run)
-        self.worker_camera.image_ready.connect(self.__Receive_Camera_Image)
-        self.worker_camera.error.connect(self.Camera_Error)
-        self.worker_camera.finished.connect(self.thread.quit)
-        self.worker_camera.finished.connect(self.worker_camera.deleteLater)
-        self.thread.finished.connect(self.Camera_Thread_Finished)
-        self.thread.finished.connect(self.thread.deleteLater)
-        self.worker_camera.meta_ready.connect(self.__SaveMetadata)
-        self.thread.start()
+        if self.camera_process is not None:
+            self.camera_process.join(timeout=0)
+            self.camera_process.close()
+        self.camera_process = None
+        self.camera_frame_queue = None
+        self.camera_status_queue = None
+        self.camera_stop_event = None
+        self.Config.Connection_Button.setEnabled(True)
+        self.Config.Connection_Button.setText("Now Disconnected. Click to Connect")
+
+    def _Start_Camera_Process(self, serial, exposure, fps):
+        ctx = mp.get_context('spawn')
+        self.camera_frame_queue = ctx.Queue(maxsize=1)
+        self.camera_status_queue = ctx.Queue()
+        self.camera_stop_event = ctx.Event()
+
+        self.camera_process = ctx.Process(target = UP.camera_process_main,
+                                          args=(serial, exposure, fps, self.camera_frame_queue, self.camera_status_queue, self.camera_stop_event),
+                                          daemon=True)
+        self.camera_process.start()
         self.preview_timer.start()
+        self.process_timer.start()
 
-    @pyqtSlot(object)
-    def __Receive_Camera_Image(self, image):
-        self.latest_camera_image = image
 
     @pyqtSlot()
     def __Update_Camera_Preview(self):
-        if self.latest_camera_image is None:
+        if self.camera_frame_queue is None:
             return
-        self.ImagePreview.Update_Preview(self.latest_camera_image)
-
-
-    def _Close_Camera(self):
+        lastest_image = None
         try:
-            if self.camera is not None:
-                self.camera.close()
-                self.camera = None
-                self.preview_timer.stop()
-        except Exception as e:
-            QMessageBox.warning(self, "Camera Connection Error", f"{type(e).__name__}: {e}")
-        finally:
-            self.Config.Connection_Button.setEnabled(True)
-            self.Config.Connection_Button.setText("Now Disconnected. Click to Connect")
+            while True:
+                lastest_image = (self.camera_frame_queue.get_nowait())
+        except Empty:
+            pass
+        if lastest_image is None:
+            return
+
+        self.ImagePreview.Update_Preview(lastest_image)
+
+    @pyqtSlot()
+    def __Poll_Camera_Process(self):
+        if self.camera_status_queue is not None:
+            try:
+                while True:
+                    status, message = (self.camera_status_queue.get_nowait())
+                    if status == "connected":
+                        self.Config.Connection_Button.setEnabled(True)
+                        self.Config.Connection_Button.setText("Now Connected. Click to Disconnect")
+                    elif status == "error":
+                        QMessageBox.critical(self, "Camera Connection Error", message)
+                    elif status == "disconnected":
+                        pass
+            except Empty:
+                pass
+        if (self.camera_process is not None and self.camera_process.is_alive()):
+            self._Camera_Process_Finished()
+
 
 
 
@@ -187,7 +213,7 @@ class HSIWindow(QWidget):
     #     self.ImagePreview.Update_Preview(self.image)
 
     def __SaveMetadata(self, metadata):
-        self.Metadata = metadata
+        self.Metadata = None
 
     # def init_StatusLayout(self, StatusLayout):
     #     self.Status = StatusWidget()
@@ -643,8 +669,9 @@ class SpectrumPreviewWidgets(QWidget):
 
 
 if __name__ == '__main__':
-
+    mp.freeze_support()
     app = QApplication(sys.argv)
     window = App()
-    app.exec()
+    window.show()
+    sys.exit(app.exec())
 

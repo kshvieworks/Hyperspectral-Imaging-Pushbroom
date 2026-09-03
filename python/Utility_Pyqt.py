@@ -77,8 +77,6 @@ class CustomFunction:
         if cvimage is None or cvimage.size == 0:
             return None
 
-        image = np.asarray(cvimage)
-
         # 1. Adjust and Normalize to Target bit depth
         display_image = CustomFunction.Normalize_Image(cvimage, vmin, vmax)
         # 2. Resize

@@ -28,11 +28,14 @@ class Controller:
         self.camera.set_frame_rate_max(fps)
         self.camera.set_frame_rate_max_enabled(True)
         self.camera.capture_video(buffer_size)
+        print("FPS Limit Enabled", self.camera.get_frame_rate_max_enabled())
+        print("FPS Limit", self.camera.get_frame_rate_max())
+        print("Actual FPS", self.camera.get_frame_rate())
 
     def Get_Preview_Frame(self, timeout_s=1):
         return self.camera.get_image(timeout_s)
 
-    def Stop_Acquire_Frame(self):
+    def Stop_Acquisition(self):
         self.abort()
 
     def _Configure_ExposureTime(self, exposure_s):

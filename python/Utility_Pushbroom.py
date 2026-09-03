@@ -1,51 +1,54 @@
 import numpy as np
 from PyQt6.QtCore import (QObject, QThread, pyqtSignal, pyqtSlot)
+import multiprocessing as mp
+from queue import Empty, Full
+
+import CameraControl as CC
+
 import time
 
 from pecamerapy.include._pecamerapy import Metadata
 
-
-class CameraWorker(QObject):
-    image_ready = pyqtSignal(object)
-    meta_ready = pyqtSignal(object)
-    error = pyqtSignal(str)
-    finished = pyqtSignal()
-
-    def __init__(self, camera, preview_fps=10):
-        super().__init__()
-        self.camera = camera
-        self.preview_fps=preview_fps
-
-    @pyqtSlot()
-    def run(self):
-        thread = QThread.currentThread()
+def put_latest(queue, data):
+    try:
+        queue.put_nowait(data)
+    except Full:
         try:
-            self.camera.Start_Preview(fps=self.preview_fps, buffer_size=3)
+            queue.get_nowait()
+        except Empty:
+            pass
+        try:
+            queue.put_nowait(data)
+        except Full:
+            pass
 
-            while not thread.isInterruptionRequested():
-                image, metadata = (self.camera.Get_Preview_Frame(timeout_s=1))
-
-                if thread.isInterruptionRequested():
-                    break
-
-                self.image_ready.emit(image)
-                self.meta_ready.emit(metadata)
-
-        except Exception as e:
-            if not thread.isInterruptionRequested():
-                self.error.emit(f"{type(e).__name__}: {e}")
-
-        finally:
+def camera_process_main(serial, exposure, fps, frame_queue, status_queue, stop_event):
+    camera = None
+    try:
+        camera = CC.Controller(serial)
+        camera.open()
+        camera.Configure(exposure)
+        camera.Start_Preview(fps=fps, buffer_size=3)
+        status_queue.put(("connected", None))
+        while not stop_event.is_set():
+            image, metadata = (camera.Get_Preview_Frame(timeout_s = 0.5))
+            if stop_event.is_set():
+                break
+            put_latest(frame_queue, image)
+    except Exception as e:
+        status_queue.put(("error", f"{type(e).__name__}: {e}"))
+    finally:
+        if camera is not None:
             try:
-                self.camera.Stop_Acquisition()
+                camera.Stop_Acquisition()
             except Exception:
                 pass
-            self.finished.emit()
-
-    def stop(self):
-        self.running = False
+            try:
+                camera.close()
+            except Exception:
+                pass
         try:
-            self.camera.abort()
+            status_queue.put(("disconnected", None))
         except Exception:
             pass
 
@@ -60,14 +63,14 @@ class AcquisitionWorker(QObject):
     error = pyqtSignal(str)
     status = pyqtSignal(str)
 
-    def __init__(self, stage, camera, start_mm, stop_mm, step_mm, expsure_s):
+    def __init__(self, stage, camera, start_mm, stop_mm, step_mm, exposure_s):
         super().__init__()
         self.stage = stage
         self.camera = camera
         self.start_mm = start_mm
         self.stop_mm = stop_mm
         self.step_mm = step_mm
-        self.expsure_s = expsure_s
+        self.exposure_s = exposure_s
 
         self.running = True
 
@@ -75,7 +78,7 @@ class AcquisitionWorker(QObject):
     def run(self):
         try:
 
-            self.camera.configure(self.expsure_s)
+            self.camera.configure(self.exposure_s)
 
             positions = np.arange(self.start_mm, self.stop_mm + self.step_mm/2, self.step_mm,)
             n_lines = len(positions)
