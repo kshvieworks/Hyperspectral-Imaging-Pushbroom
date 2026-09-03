@@ -32,7 +32,9 @@ class Controller:
         print("FPS Limit", self.camera.get_frame_rate_max())
         print("Actual FPS", self.camera.get_frame_rate())
 
-    def Get_Preview_Frame(self, timeout_s=1):
+    def Get_Preview_Frame(self, timeout_s: int=1):
+        if not isinstance(timeout_s, int):
+            raise TypeError("Timeout must be an integer for pecamerapy.get_image()")
         return self.camera.get_image(timeout_s)
 
     def Stop_Acquisition(self):
