@@ -115,8 +115,12 @@ class HSIWindow(QWidget):
 
 
     def Disconnect_Camera(self):
-        self._Disconnect_Camera()
-        self.Config.Connection_Button.setText("Now Disconnected. Click to Connect")
+        if (self.thread is not None and self.thread.isRunning()):
+            self.Config.Connection_Button.setEnabled(False)
+            self.Config.Connection_Button.setText("Disconnecting...")
+            self.thread.requestInterruption()
+            return
+        self._Close_Camera()
 
     def init_Camera(self):
         exposure = self.Config.Exposure_Spinbox.value()
@@ -125,44 +129,27 @@ class HSIWindow(QWidget):
     @pyqtSlot(str)
     def Camera_Error(self, message):
         QMessageBox.critical(self, "Camera Error", f"{message}")
-        self.__Stop_Camera_Preview()
+        self._Close_Camera()
 
     def Camera_Thread_Finished(self):
         self.worker_camera = None
         self.thread = None
+        self._Close_Camera()
 
     def _Start_Camera_Preview(self):
         self.thread = QThread(self)
-        self.worker_camera = UP.CameraWorker(self.camera)
+        self.worker_camera = UP.CameraWorker(self.camera, preview_fps=10)
         self.worker_camera.moveToThread(self.thread)
         self.thread.started.connect(self.worker_camera.run)
         self.worker_camera.image_ready.connect(self.__Receive_Camera_Image)
         self.worker_camera.error.connect(self.Camera_Error)
         self.worker_camera.finished.connect(self.thread.quit)
+        self.worker_camera.finished.connect(self.worker_camera.deleteLater)
         self.thread.finished.connect(self.Camera_Thread_Finished)
-        self.thread.start()
+        self.thread.finished.connect(self.thread.deleteLater)
         self.worker_camera.meta_ready.connect(self.__SaveMetadata)
+        self.thread.start()
         self.preview_timer.start()
-
-    def _Disconnect_Camera(self):
-        try:
-            self.__Stop_Camera_Preview()
-            if self.camera is not None:
-                self.camera.close()
-                self.camera = None
-        except Exception as e:
-            QMessageBox.warning(self, "Camera Connection Error", f"{type(e).__name__}: {e}")
-
-    def __Stop_Camera_Preview(self):
-        if self.worker_camera is None:
-            return
-        if self.worker_camera is not None:
-            self.worker_camera.stop()
-        if self.thread is not None:
-           self.thread.wait()
-        self.worker_camera = None
-        self.thread = None
-        self.preview_timer.stop()
 
     @pyqtSlot(object)
     def __Receive_Camera_Image(self, image):
@@ -173,6 +160,31 @@ class HSIWindow(QWidget):
         if self.latest_camera_image is None:
             return
         self.ImagePreview.Update_Preview(self.latest_camera_image)
+
+
+    def _Close_Camera(self):
+        try:
+            if self.camera is not None:
+                self.camera.close()
+                self.camera = None
+                self.preview_timer.stop()
+        except Exception as e:
+            QMessageBox.warning(self, "Camera Connection Error", f"{type(e).__name__}: {e}")
+        finally:
+            self.Config.Connection_Button.setEnabled(True)
+            self.Config.Connection_Button.setText("Now Disconnected. Click to Connect")
+
+
+
+    # @pyqtSlot(object)
+    # def __Receive_Camera_Image(self, image):
+    #     self.latest_camera_image = image
+
+    # @pyqtSlot()
+    # def __Update_Camera_Preview(self, image):
+    #     if image is None:
+    #         return
+    #     self.ImagePreview.Update_Preview(self.image)
 
     def __SaveMetadata(self, metadata):
         self.Metadata = metadata

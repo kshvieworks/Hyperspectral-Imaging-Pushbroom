@@ -1,5 +1,5 @@
 import numpy as np
-from PyQt6.QtCore import (QObject, pyqtSignal, pyqtSlot)
+from PyQt6.QtCore import (QObject, QThread, pyqtSignal, pyqtSlot)
 import time
 
 from pecamerapy.include._pecamerapy import Metadata
@@ -11,28 +11,35 @@ class CameraWorker(QObject):
     error = pyqtSignal(str)
     finished = pyqtSignal()
 
-    def __init__(self, camera):
+    def __init__(self, camera, preview_fps=10):
         super().__init__()
         self.camera = camera
-        self.running = False
+        self.preview_fps=preview_fps
 
     @pyqtSlot()
     def run(self):
-        self.running = True
-
+        thread = QThread.currentThread()
         try:
-            while self.running:
-                image, metadata = (self.camera.Acquire_Frame())
+            self.camera.Start_Preview(fps=self.preview_fps, buffer_size=3)
 
-                if not self.running:
+            while not thread.isInterruptionRequested():
+                image, metadata = (self.camera.Get_Preview_Frame(timeout_s=1))
+
+                if thread.isInterruptionRequested():
                     break
 
                 self.image_ready.emit(image)
                 self.meta_ready.emit(metadata)
 
         except Exception as e:
-            self.error.emit(f"{type(e).__name__}: {e}")
+            if not thread.isInterruptionRequested():
+                self.error.emit(f"{type(e).__name__}: {e}")
+
         finally:
+            try:
+                self.camera.Stop_Acquisition()
+            except Exception:
+                pass
             self.finished.emit()
 
     def stop(self):

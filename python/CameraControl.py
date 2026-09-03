@@ -19,10 +19,21 @@ class Controller:
         self.camera.set_metadata_enabled(True)
 
     def Acquire_Frame(self):
-        python_buffer_size = 10
+        python_buffer_size = 3
         self.camera.capture(1, python_buffer_size)
         image, metadata = self.camera.get_image(5)
         return image, metadata
+
+    def Start_Preview(self, fps=10.0, buffer_size=3):
+        self.camera.set_frame_rate_max(fps)
+        self.camera.set_frame_rate_max_enabled(True)
+        self.camera.capture_video(buffer_size)
+
+    def Get_Preview_Frame(self, timeout_s=1):
+        return self.camera.get_image(timeout_s)
+
+    def Stop_Acquire_Frame(self):
+        self.abort()
 
     def _Configure_ExposureTime(self, exposure_s):
         self.camera.set_exposure_time(exposure_s)
