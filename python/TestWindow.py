@@ -139,14 +139,22 @@ class HSIWindow(QWidget):
         QMessageBox.critical(self, "Camera Error", f"{message}")
 
     def _Camera_Process_Finished(self):
+        process = self.camera_process
+        if process is None:
+            return
+        if process.is_alive():
+            return
+
         self.preview_timer.stop()
         self.process_timer.stop()
 
-        if self.camera_process is not None:
-            self.camera_process.join(timeout=0)
-            self.camera_process.close()
-        if self.camera_process.is_alive():
-            return
+        process.join()
+        process.close()
+
+        if self.camera_frame_queue is not None:
+            self.camera_frame_queue.close()
+        if self.camera_status_queue is not None:
+            self.camera_status_queue.close()
 
         self.camera_process = None
         self.camera_frame_queue = None
@@ -421,7 +429,7 @@ class ImagePreviewWidgets(QWidget):
 
         self.PreviewLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
         Layout.addWidget(self.PreviewLabel)
-        Layout.addWidget(self.ColorRange_Slider)
+        Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.CRange_L_Spinbox, self.ColorRange_Slider, self.CRange_R_Spinbox), 'Horizontal'))
 
     def UI_Component(self):
 
@@ -434,6 +442,19 @@ class ImagePreviewWidgets(QWidget):
         self.ColorRange_Slider.setRange(0, 2**16-1)
         self.ColorRange_Slider.setValue((0, 2**16-1))
         self.ColorRange_Slider.setSingleStep(1)
+
+
+        self.CRange_L_Spinbox = QSpinBox()
+        self.CRange_L_Spinbox.setRange(0, 65535)
+        self.CRange_L_Spinbox.setValue(0)
+        self.CRange_R_Spinbox = QSpinBox()
+        self.CRange_R_Spinbox.setRange(0, 65535)
+        self.CRange_R_Spinbox.setValue(65535)
+
+        self.CRange_L_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(value, self.ColorRange_Slider.value()[1], self.ColorRange_Slider))
+        self.CRange_R_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(self.ColorRange_Slider.value()[0], value, self.ColorRange_Slider))
+        self.ColorRange_Slider.valueChanged.connect(lambda values: Uqt.SliderHelper.RangeSliderChanged(self.CRange_L_Spinbox, self.CRange_R_Spinbox, values))
+
 
     def EventProcess(self):
         self.ColorRange_Slider.valueChanged.connect(self.Update_Display)

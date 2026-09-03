@@ -24,6 +24,7 @@ def put_latest(queue, data):
 
 def camera_process_main(serial, exposure, fps, frame_queue, status_queue, stop_event):
     camera = None
+    frame_queue = mp.Queue().cancel_join_thread()
     try:
         camera = CC.Controller(serial)
         camera.open()
