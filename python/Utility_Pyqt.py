@@ -71,14 +71,16 @@ class WidgetFunction:
 class CustomFunction:
 
     @staticmethod
-    def cv2qt(cvimage, vmin=None, vmax=None, bitdepth=8):
+    def cv2qt(cvimage, vmin=None, vmax=None):
         """Convert from an opencv image to QPixmap"""
 
         if cvimage is None or cvimage.size == 0:
             return None
 
+        image = np.asarray(cvimage)
+
         # 1. Adjust and Normalize to Target bit depth
-        display_image = CustomFunction.Normalize_Image(cvimage, vmin, vmax, bitdepth)
+        display_image = CustomFunction.Normalize_Image(cvimage, vmin, vmax)
         # 2. Resize
         # cvimage_bit = cv2.resize(cvimage_bit, dsize=(0, 0), fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
 
@@ -90,23 +92,23 @@ class CustomFunction:
 
         # 4. Convert to QT Style
         h, w = display_image.shape
-        bytes_per_line = (display_image.strides[0])
-        qimage = QtGui.QImage(display_image.data, w, h, bytes_per_line, QtGui.QImage.Format.Format_Grayscale16).copy()
+        # bytes_per_line = (display_image.strides[0])
+        qimage = QtGui.QImage(display_image.data, w, h, display_image.strides[0], QtGui.QImage.Format.Format_Grayscale8).copy()
         # p = convert_to_Qt_format.scaled(self.disply_width, self.display_height, QtCore.Qt.AspectRatioMode.KeepAspectRatio)
         return QtGui.QPixmap.fromImage(qimage)
 
     @staticmethod
-    def Normalize_Image(cvimage, vmin, vmax, bitdepth):
+    def Normalize_Image(cvimage, vmin, vmax):
         """Normalize and convert image depth into bitdepth"""
 
-        c_min = vmin if vmin is not None else np.min(cvimage)
-        c_max = vmax if vmax is not None else np.max(cvimage)
+        c_min = float(vmin) if vmin is not None else float(np.min(cvimage))
+        c_max = float(vmax) if vmax is not None else float(np.max(cvimage))
 
         if c_max == c_min:
             c_max = c_min + 1
 
         img_normalized = np.clip(cvimage, c_min, c_max)
-        cvimage_bit = ((2**bitdepth-1) * (img_normalized - c_min) / (c_max - c_min)).astype(np.uint16)
+        cvimage_bit = ((2**8-1) * (img_normalized - c_min) / (c_max - c_min)).astype(np.uint8)
 
         return cvimage_bit
 

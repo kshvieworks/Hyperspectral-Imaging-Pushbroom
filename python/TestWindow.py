@@ -12,7 +12,7 @@ import Utility_Pushbroom as UP
 import sys
 import numpy as np
 
-from PyQt6.QtCore import (Qt, QObject, QThread, pyqtSignal, pyqtSlot)
+from PyQt6.QtCore import (Qt, QObject, QThread, pyqtSignal, pyqtSlot, QTimer)
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
                              QPushButton, QSlider,
                              QDoubleSpinBox, QComboBox, QSpinBox, QGroupBox, QFileDialog, QMessageBox, QLineEdit)
@@ -22,6 +22,8 @@ from qtrangeslider import QRangeSlider
 import pyqtgraph as pg
 from pylablib.devices import Thorlabs
 from pecamerapy import Camera
+from pecamerapy.include._pecamerapy import Metadata
+
 
 import cv2
 
@@ -51,6 +53,13 @@ class HSIWindow(QWidget):
         self.camera = None
         self.thread = None
         self.worker_camera = None
+        self.Metadata = None
+
+    # Preview Timer
+        self.latest_camera_image = None
+        self.preview_timer = QTimer(self)
+        self.preview_timer.setInterval(50)
+        self.preview_timer.timeout.connect(self.__Update_Camera_Preview)
 
     # Define Cube
         self.cube = None
@@ -64,7 +73,7 @@ class HSIWindow(QWidget):
         self.init_Layout(PageLayout, ConfigLayout, PreviewLayout, StatusLayout)
         self.setLayout(PageLayout)
 
-    def init_Layout(self, PageLayout, PreviewLayout, ConfigLayout, StatusLayout):
+    def init_Layout(self, PageLayout, ConfigLayout, PreviewLayout, StatusLayout):
         PageLayout.addLayout(ConfigLayout)
         PageLayout.addLayout(PreviewLayout)
         PageLayout.addLayout(StatusLayout)
@@ -127,11 +136,13 @@ class HSIWindow(QWidget):
         self.worker_camera = UP.CameraWorker(self.camera)
         self.worker_camera.moveToThread(self.thread)
         self.thread.started.connect(self.worker_camera.run)
-        self.worker_camera.image_ready.connect(self.ImagePreview.Update_Preview)
+        self.worker_camera.image_ready.connect(self.__Receive_Camera_Image)
         self.worker_camera.error.connect(self.Camera_Error)
         self.worker_camera.finished.connect(self.thread.quit)
         self.thread.finished.connect(self.Camera_Thread_Finished)
         self.thread.start()
+        self.worker_camera.meta_ready.connect(self.__SaveMetadata)
+        self.preview_timer.start()
 
     def _Disconnect_Camera(self):
         try:
@@ -148,10 +159,23 @@ class HSIWindow(QWidget):
         if self.worker_camera is not None:
             self.worker_camera.stop()
         if self.thread is not None:
-            self.thread.quit()
-            self.thread.wait()
+           self.thread.wait()
         self.worker_camera = None
         self.thread = None
+        self.preview_timer.stop()
+
+    @pyqtSlot(object)
+    def __Receive_Camera_Image(self, image):
+        self.latest_camera_image = image
+
+    @pyqtSlot()
+    def __Update_Camera_Preview(self):
+        if self.latest_camera_image is None:
+            return
+        self.ImagePreview.Update_Preview(self.latest_camera_image)
+
+    def __SaveMetadata(self, metadata):
+        self.Metadata = metadata
 
     # def init_StatusLayout(self, StatusLayout):
     #     self.Status = StatusWidget()
@@ -387,7 +411,7 @@ class ImagePreviewWidgets(QWidget):
         if self.current_image is None:
             return
         vmin, vmax = self.ColorRange_Slider.value()
-        pixmap = Uqt.CustomFunction.cv2qt(self.current_image, vmin, vmax, 16)
+        pixmap = Uqt.CustomFunction.cv2qt(self.current_image, vmin, vmax)
         if pixmap:
             self.PreviewLabel.setPixmap(pixmap)
 

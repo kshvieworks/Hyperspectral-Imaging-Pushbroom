@@ -30,6 +30,9 @@ class Controller:
     def close(self):
         self.camera.close()
 
+    def abort(self):
+        self.camera.abort()
+
     @staticmethod
     def _OpenMode():
        return pecamerapy.OpenMode.USB3

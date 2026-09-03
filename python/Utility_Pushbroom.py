@@ -1,9 +1,13 @@
 import numpy as np
 from PyQt6.QtCore import (QObject, pyqtSignal, pyqtSlot)
+import time
+
+from pecamerapy.include._pecamerapy import Metadata
 
 
 class CameraWorker(QObject):
-    image_ready = pyqtSignal(np.ndarray)
+    image_ready = pyqtSignal(object)
+    meta_ready = pyqtSignal(object)
     error = pyqtSignal(str)
     finished = pyqtSignal()
 
@@ -19,7 +23,13 @@ class CameraWorker(QObject):
         try:
             while self.running:
                 image, metadata = (self.camera.Acquire_Frame())
+
+                if not self.running:
+                    break
+
                 self.image_ready.emit(image)
+                self.meta_ready.emit(metadata)
+
         except Exception as e:
             self.error.emit(f"{type(e).__name__}: {e}")
         finally:
@@ -27,6 +37,10 @@ class CameraWorker(QObject):
 
     def stop(self):
         self.running = False
+        try:
+            self.camera.abort()
+        except Exception:
+            pass
 
 
 class AcquisitionWorker(QObject):
@@ -74,7 +88,7 @@ class AcquisitionWorker(QObject):
 
                 #2. Acquire Camera Frame
                 self.status.emit(f"Acquiring line {i+1}/{n_lines}")
-                image_now, metadata = (self.camera.Acquire_Frame())
+                image_now, metadata = self.camera.Acquire_Frame()
 
                 #3. Store Cube
                 cubes.append(image_now)
