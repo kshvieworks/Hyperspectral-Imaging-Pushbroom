@@ -31,7 +31,7 @@ def camera_process_main(serial, exposure, fps, frame_queue, status_queue, stop_e
         camera.Start_Preview(fps=fps, buffer_size=3)
         status_queue.put(("connected", None))
         while not stop_event.is_set():
-            image, metadata = (camera.Get_Preview_Frame(timeout_s = 0.5))
+            image, metadata = camera.Get_Preview_Frame(timeout_s = 0.5)
             if stop_event.is_set():
                 break
             put_latest(frame_queue, image)

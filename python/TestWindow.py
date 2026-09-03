@@ -145,6 +145,9 @@ class HSIWindow(QWidget):
         if self.camera_process is not None:
             self.camera_process.join(timeout=0)
             self.camera_process.close()
+        if self.camera_process.is_alive():
+            return
+
         self.camera_process = None
         self.camera_frame_queue = None
         self.camera_status_queue = None
@@ -159,8 +162,7 @@ class HSIWindow(QWidget):
         self.camera_stop_event = ctx.Event()
 
         self.camera_process = ctx.Process(target = UP.camera_process_main,
-                                          args=(serial, exposure, fps, self.camera_frame_queue, self.camera_status_queue, self.camera_stop_event),
-                                          daemon=True)
+                                          args=(serial, exposure, fps, self.camera_frame_queue, self.camera_status_queue, self.camera_stop_event))
         self.camera_process.start()
         self.preview_timer.start()
         self.process_timer.start()
@@ -170,16 +172,16 @@ class HSIWindow(QWidget):
     def __Update_Camera_Preview(self):
         if self.camera_frame_queue is None:
             return
-        lastest_image = None
+        latest_image = None
         try:
             while True:
-                lastest_image = (self.camera_frame_queue.get_nowait())
+                latest_image = (self.camera_frame_queue.get_nowait())
         except Empty:
             pass
-        if lastest_image is None:
+        if latest_image is None:
             return
 
-        self.ImagePreview.Update_Preview(lastest_image)
+        self.ImagePreview.Update_Preview(latest_image)
 
     @pyqtSlot()
     def __Poll_Camera_Process(self):
@@ -196,7 +198,7 @@ class HSIWindow(QWidget):
                         pass
             except Empty:
                 pass
-        if (self.camera_process is not None and self.camera_process.is_alive()):
+        if (self.camera_process is not None and not self.camera_process.is_alive()):
             self._Camera_Process_Finished()
 
 
