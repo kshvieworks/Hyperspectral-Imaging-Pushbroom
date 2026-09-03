@@ -1,6 +1,7 @@
 from pathlib import Path
 import pecamerapy
 import numpy as np
+# 'CA000011038'
 
 class Controller:
     def __init__(self, serial):
@@ -33,8 +34,12 @@ class Controller:
     def _OpenMode():
        return pecamerapy.OpenMode.USB3
 
-
-
+# import CameraControl
+# import pecamerapy
+# cam = pecamerapy.Camera()
+# mode = pecamerapy.OpenMode.USB3
+# camera = CameraControl.Controller(cam.find_first(mode)[1])
+# camera.open()
 
 # print(dir(pecamerapy))
 # cam = pecamerapy.Camera()
