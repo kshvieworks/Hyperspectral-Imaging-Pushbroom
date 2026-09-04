@@ -2,7 +2,7 @@ import numpy as np
 import imageio
 from PyQt6 import QtGui
 from PyQt6 import QtWidgets
-from PyQt6.QtWidgets import QApplication, QFileDialog
+from PyQt6.QtWidgets import QApplication, QFileDialog, QLabel
 from PyQt6 import QtCore
 
 import cv2
@@ -210,6 +210,46 @@ class SliderHelper:
         minimum, maximum = values
         Spin_Left.setValue(minimum)
         Spin_Right.setValue(maximum)
+
+
+class ClickableImageLabel(QLabel):
+    pixel_clicked = QtCore.pyqtSignal(int, int)
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.image_shape = None
+
+    def set_image_shape(self, shape):
+        self.image_shape = shape
+
+    def mousePressEvent(self, event):
+        pixmap = self.pixmap()
+        if (pixmap is None or self.imag_shape is None):
+            return
+
+        label_w = self.width()
+        label_h = self.height()
+
+        pix_w = pixmap.width()
+        pix_h = pixmap.height()
+
+        x_offset = (label_w - pix_w) / 2
+        y_offset = (label_h - pix_h) / 2
+
+        x = event.position().x() - x_offset
+        y = event.position().y() - y_offset
+
+        if(x<0 or y<0 or x>=pix_w or y>=pix_h):
+            return
+
+        image_h, image_w = self.image_shape[:2]
+        image_x = int(x*image_w/pix_w)
+        image_y = int(y*image_h/pix_h)
+
+        self.pixel_clicked.emit(image_x, image_y)
+
+
+
+
 
 #
 # class ROIControl(QtWidgets.QWidget):
