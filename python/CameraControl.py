@@ -13,8 +13,10 @@ class Controller:
         index = self.camera.search(mode, self.serial)
         self.camera.open(index, mode)
 
-    def Configure(self, exposure_s = 1E-3):
+    def Configure(self, exposure_s = 1E-3, temperature_c = None):
         self._Configure_ExposureTime(exposure_s)
+        if temperature_c is not None:
+            self._Configure_Temperature(temperature_c)
 
         self.camera.set_metadata_enabled(True)
 
@@ -52,6 +54,15 @@ class Controller:
     @staticmethod
     def _OpenMode():
        return pecamerapy.OpenMode.USB3
+
+    def _Configure_Temperature(self, temperature_c):
+        temp_min, temp_max, temp_step = (self.camera.get_target_temperature_range())
+        temperature_c = float(temperature_c)
+
+        if not (temp_min <= temperature_c <= temp_max):
+            raise ValueError(f"Temperature must be between {temp_min} and {temp_max} °C.")
+
+        self.camera.set_target_temperature(temperature_c)
 
 # import CameraControl
 # import pecamerapy

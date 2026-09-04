@@ -223,7 +223,7 @@ class ClickableImageLabel(QLabel):
 
     def mousePressEvent(self, event):
         pixmap = self.pixmap()
-        if (pixmap is None or self.imag_shape is None):
+        if (pixmap is None or self.image_shape is None):
             return
 
         label_w = self.width()

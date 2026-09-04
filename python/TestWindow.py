@@ -14,10 +14,10 @@ import numpy as np
 import multiprocessing as mp
 from queue import Empty
 
-from PyQt6.QtCore import (Qt, QObject, pyqtSignal, pyqtSlot, QTimer)
+from PyQt6.QtCore import (Qt, QObject, pyqtSignal, pyqtSlot, QTimer, QThread)
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
                              QPushButton, QSlider,
-                             QDoubleSpinBox, QComboBox, QSpinBox, QGroupBox, QFileDialog, QMessageBox, QLineEdit)
+                             QDoubleSpinBox, QComboBox, QSpinBox, QGroupBox, QFileDialog, QMessageBox, QLineEdit, QStyle)
 from qtrangeslider import QRangeSlider
 
 
@@ -75,6 +75,11 @@ class HSIWindow(QWidget):
         self.process_timer.setInterval(100)
         self.process_timer.timeout.connect(self.__Poll_Camera_Process)
 
+    # Stage Controller
+        self.stage_thread = QThread(self)
+        self.stage_worker = UP.StageWorker()
+        self.stage_worker.moveToThread(self.stage_thread)
+
     # Define Cube
         self.cube = None
 
@@ -116,15 +121,19 @@ class HSIWindow(QWidget):
         self.Config.camera_disconnect_requested.connect(self.Disconnect_Camera)
         self.Config.SpectrumY_Spinbox.valueChanged.connect(self.__Spectrum_Position_Changed)
         self.ImagePreview.spectrum_position_selected.connect(self.Config.SpectrumY_Spinbox.setValue)
+        self.Config.stage_connect_requested.connect(self.stage_worker.connect_stage)
+        self.Config.stage_spin_requested.connect(self.stage_worker.move_to)
+
 
     def Connect_Camera(self, serial):
         if (self.camera_process is not None and self.camera_process.is_alive()):
             return
         exposure = self.Config.Exposure_Spinbox.value()
         fps = self.Config.FPS_Spinbox.value()
+        temperature = self.Config.Temperature_Spinbox.value()
         self.Config.Connection_Button.setEnabled(False)
         self.Config.Connection_Button.setText("Connecting...")
-        self._Start_Camera_Process(serial = serial, exposure = exposure, fps = fps)
+        self._Start_Camera_Process(serial = serial, exposure = exposure, fps = fps, temperature = temperature)
 
     def Disconnect_Camera(self):
         if self.camera_process is None:
@@ -140,14 +149,14 @@ class HSIWindow(QWidget):
     def Camera_Error(self, message):
         QMessageBox.critical(self, "Camera Error", f"{message}")
 
-    def _Start_Camera_Process(self, serial, exposure, fps):
+    def _Start_Camera_Process(self, serial, exposure, fps, temperature):
         ctx = mp.get_context('spawn')
         self.camera_frame_queue = ctx.Queue(maxsize=1)
         self.camera_status_queue = ctx.Queue()
         self.camera_stop_event = ctx.Event()
 
         self.camera_process = ctx.Process(target = UP.camera_process_main,
-                                          args=(serial, exposure, fps, self.camera_frame_queue, self.camera_status_queue, self.camera_stop_event))
+                                          args=(serial, exposure, fps, temperature, self.camera_frame_queue, self.camera_status_queue, self.camera_stop_event))
         self.camera_process.start()
         self.preview_timer.start()
         self.process_timer.start()
@@ -245,10 +254,10 @@ class HSIWindow(QWidget):
 
     def __Update_Spectrum_Range(self, image:np.ndarray):
         spatial_max = image.shape[0] - 1
-        self.Config.SpectrumY_Spinbox.setMaximum(spatial_max)
-        self.Config.SpectrumY_Spinbox.setValue(spatial_max)
 
-
+        if (self.Config.SpectrumY_Spinbox.maximum() != spatial_max):
+            self.Config.SpectrumY_Spinbox.setMaximum(spatial_max)
+            self.Config.SpectrumY_Slider.setMaximum(spatial_max)
 
     # @pyqtSlot(object)
     # def __Receive_Camera_Image(self, image):
@@ -271,6 +280,10 @@ class HSIWindow(QWidget):
 class ConfigWidget(QWidget):
     camera_connect_requested = pyqtSignal(str)
     camera_disconnect_requested = pyqtSignal()
+    stage_connect_requested = pyqtSignal(str)
+    stage_move_requested = pyqtSignal(float)
+    stage_spin_requested = pyqtSignal(float)
+
 
     def __init__(self, parent=None):
         super(ConfigWidget, self).__init__(parent)
@@ -307,11 +320,18 @@ class ConfigWidget(QWidget):
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Spectrum Settings')
 
         Temp_Layout = QVBoxLayout()
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_Serial_Prompt, self.Stage_Serial_Entry), 'Horizontal'))
+        Temp_Layout.addWidget(self.Stage_Connection_Button)
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_Speed_Prompt, self.Stage_Speed_Spinbox), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_Move_Prompt, self.Stage_Move_Spinbox, self.Stage_Position), 'Horizontal'))
+        Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Stage Settings')
+
+
+        Temp_Layout = QVBoxLayout()
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_Start_Prompt, self.Stage_Start_Spinbox), 'Horizontal'))
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_End_Prompt, self.Stage_End_Spinbox), 'Horizontal'))
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_Steps_Prompt, self.Stage_Steps_Spinbox), 'Horizontal'))
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_Speed_Prompt, self.Stage_Speed_Spinbox), 'Horizontal'))
-        Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Stage Settings')
+        Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Stage Scan')
 
         # Layout.addLayout(self.DesignUtil.Layout_Widget((self.Interval_Prompt, self.Interval_Entry), 'Horizontal'))
         # Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.ImagePath_BTN, self.DarkPath_BTN, self.FlatPath_BTN), 'Horizontal'))
@@ -341,7 +361,7 @@ class ConfigWidget(QWidget):
         self.Temperature_Prompt = QLabel("Sensor Temperature")
         self.Temperature_Prompt.setFixedSize(*LabelSize)
         self.Temperature_Spinbox = QSpinBox()
-        self.Temperature_Spinbox.setRange(-60, 30)
+        # self.Temperature_Spinbox.setRange(-60, 30)
         self.Temperature_Spinbox.setValue(0)
         self.Temperature_Spinbox.setSuffix(" °C")
 
@@ -383,11 +403,6 @@ class ConfigWidget(QWidget):
         self.ROI_R_Spinbox.setRange(0, 511)
         self.ROI_R_Spinbox.setValue(511)
 
-        self.ROI_L_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(value, self.ROI_Slider.value()[1], self.ROI_Slider))
-        self.ROI_R_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(self.ROI_Slider.value()[0], value, self.ROI_Slider))
-        self.ROI_Slider.valueChanged.connect(lambda values: Uqt.SliderHelper.RangeSliderChanged(self.ROI_L_Spinbox, self.ROI_R_Spinbox, values))
-
-
         self.SpectrumY_Prompt = QLabel("Spectrum Position")
         self.SpectrumY_Prompt.setFixedSize(*LabelSize)
         self.SpectrumY_Spinbox = QSpinBox()
@@ -398,8 +413,23 @@ class ConfigWidget(QWidget):
         self.SpectrumY_Slider.setSingleStep(1)
         self.SpectrumY_Slider.setValue(255)
 
-        self.SpectrumY_Slider.valueChanged.connect(self.SpectrumY_Spinbox.setValue)
-        self.SpectrumY_Spinbox.valueChanged.connect(self.SpectrumY_Slider.setValue)
+        self.Stage_Serial_Prompt = QLabel("Serial Number")
+        self.Stage_Serial_Prompt.setFixedSize(*LabelSize)
+        self.Stage_Serial_Entry = QLineEdit()
+        self.Stage_Serial_Entry.setFixedSize(*EntrySize)
+        self.Stage_Serial_Entry.setPlaceholderText("Enter Stage serial number")
+        self.Stage_Serial_Entry.setText("49402484")
+
+        self.Stage_Connection_Button = QPushButton("Now Disconnected. Click to Connect")
+
+        self.Stage_Move_Prompt = QLabel("Stage Control")
+        self.Stage_Move_Prompt.setFixedSize(*LabelSize)
+        self.Stage_Move_Spinbox = QDoubleSpinBox()
+        self.Stage_Move_Spinbox.setRange(0, 50)
+        self.Stage_Move_Spinbox.setValue(0)
+        self.Stage_Move_Spinbox.setSuffix(" mm")
+
+        self.Stage_Position = QLabel("0")
 
         self.Stage_Start_Prompt = QLabel("Start Position")
         self.Stage_Start_Prompt.setFixedSize(*LabelSize)
@@ -430,7 +460,13 @@ class ConfigWidget(QWidget):
         self.Stage_Speed_Spinbox.setSuffix(" mm/s")
 
     def EventProcess(self):
+
         self.Connection_Button.clicked.connect(self.CameraConnection_Event)
+        self.ROI_L_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(value, self.ROI_Slider.value()[1], self.ROI_Slider))
+        self.ROI_R_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(self.ROI_Slider.value()[0], value, self.ROI_Slider))
+        self.ROI_Slider.valueChanged.connect(lambda values: Uqt.SliderHelper.RangeSliderChanged(self.ROI_L_Spinbox, self.ROI_R_Spinbox, values))
+        self.SpectrumY_Slider.valueChanged.connect(self.SpectrumY_Spinbox.setValue)
+        self.SpectrumY_Spinbox.valueChanged.connect(self.SpectrumY_Slider.setValue)
 
     def CameraConnection_Event(self):
         if self.Connection_Button.text() == "Now Disconnected. Click to Connect":

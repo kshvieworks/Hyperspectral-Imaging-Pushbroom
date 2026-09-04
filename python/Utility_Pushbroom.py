@@ -1,9 +1,10 @@
 import numpy as np
-from PyQt6.QtCore import (QObject, QThread, pyqtSignal, pyqtSlot)
+from PyQt6.QtCore import (QObject, QThread, QTimer, pyqtSignal, pyqtSlot)
 import multiprocessing as mp
 from queue import Empty, Full
 
 import CameraControl as CC
+import StageControl as SC
 
 import time
 
@@ -22,13 +23,13 @@ def put_latest(queue, data):
         except Full:
             pass
 
-def camera_process_main(serial, exposure, fps, frame_queue, status_queue, stop_event):
+def camera_process_main(serial, exposure, fps, temperature, frame_queue, status_queue, stop_event):
     camera = None
-    frame_queue = mp.Queue().cancel_join_thread()
+    frame_queue.cancel_join_thread()
     try:
         camera = CC.Controller(serial)
         camera.open()
-        camera.Configure(exposure)
+        camera.Configure(exposure_s = exposure, temperature_c = temperature)
         camera.Start_Preview(fps=fps, buffer_size=3)
         status_queue.put(("connected", None))
         while not stop_event.is_set():
@@ -133,6 +134,99 @@ class AcquisitionWorker(QObject):
             pass
 
 
+class StageWorker(QObject):
+    connected = pyqtSignal(float)
+    position_updated = pyqtSignal(float)
+    motion_started = pyqtSignal()
+    motion_finished = pyqtSignal(float)
+    error = pyqtSignal(str)
+
+    def __init__(self):
+        super().__init__()
+
+        self.stage = None
+
+        self.motion_timer = QTimer()
+        self.motion_timer.setInterval(50)
+        self.motion_timer.timeout.connect(self._poll_motion)
+
+    @pyqtSlot(str)
+    def connect_stage(self, stage):
+
+        try:
+            self.stage = SC.Controller
+            position = self.stage.position
+            self.connected.emit(position)
+        except Exception as e:
+            self.error.emit(f"{type(e).__name__}: {e}")
+
+    @pyqtSlot(float)
+    def move_to(self, position):
+        if self.stage is None:
+            return
+        try:
+            self.stage.move_to(position)
+            self.motion_started.emit()
+            self.motion_timer.start()
+
+        except Exception as e:
+            self.error.emit(f"{type(e).__name__}: {e}")
+
+    @pyqtSlot(float)
+    def jog(self, distance):
+        if self.stage is None:
+            return
+        try:
+            self.stage.jog(distance)
+            self.motion_started.emit()
+            self.motion_timer.start()
+        except Exception as e:
+            self.error.emit(f"{type(e).__name__}: {e}")
+
+    @pyqtSlot(float)
+    def set_speed(self, speed):
+        if self.stage is None:
+            return
+        try:
+            self.stage.set_speed(speed)
+        except Exception as e:
+            self.error.emit(f"{type(e).__name__}: {e}")
+
+    @pyqtSlot()
+    def stop(self):
+        if self.stage is None:
+            return
+        try:
+            self.stage.stop()
+        except Exception as e:
+            self.error.emit(f"{type(e).__name__}: {e}")
+
+    @pyqtSlot()
+    def home(self):
+        if self.stage is None:
+            return
+        try:
+            self.stage.home()
+            self.motion_started.emit()
+            self.motion_timer.start()
+
+        except Exception as e:
+            self.error.emit(f"{type(e).__name__}: {e}")
+
+    @pyqtSlot()
+    def _poll_motion(self):
+        if self.stage is None:
+            return
+        try:
+            position = self.stage.position()
+            self.position_updated.emit(position)
+            if not self.stage.is_moving():
+                self.motion_timer.stop()
+                self.motion_finished.emit(position)
+
+        except Exception as e:
+            self.motion_timer.stop()
+            self.error.emit(f"{type(e).__name__}: {e}")
 
 
 

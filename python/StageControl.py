@@ -13,15 +13,21 @@ class Controller:
 
     def move_to(self, position_mm):
         self.stage.move_to(float(position_mm))
-        self.stage.wait_move()
+        # self.stage.wait_move()
 
     def move_by(self, distance_mm):
         self.stage.move_by(float(distance_mm))
-        self.stage.wait_move()
+        # self.stage.wait_move()
+
+    def jog(self, distance_mm):
+        self.stage.move_by(float(distance_mm))
 
     def home(self):
         self.stage.home(force=True)
-        self.stage.wait_move()
+        # self.stage.wait_move()
+
+    def set_speed(self, speed_mm_s):
+        self.stage.setup_velocity(max_velocity=float(speed_mm_s))
 
     def stop(self):
         try:
@@ -32,6 +38,8 @@ class Controller:
     def close(self):
         self.stage.close()
 
+    def _is_moving(self):
+        return self.stage.is_moving()
 
 
 # SERIAL = "49402484"
