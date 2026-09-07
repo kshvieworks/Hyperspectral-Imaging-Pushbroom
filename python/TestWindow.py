@@ -87,8 +87,6 @@ class HSIWindow(QWidget):
         self.pending_scan_params = None
         self.stage_connected = False
 
-
-
     # Define Cube
         self.cube = None
 
@@ -204,8 +202,13 @@ class HSIWindow(QWidget):
 
     @pyqtSlot(float)
     def __Stage_Connected(self, position):
+        self.stage_connected = True
         self.Config.Stage_Connection_Button.setText("Connected")
         self.__Update_Stage_Position(position)
+
+    @pyqtSlot()
+    def __Stage_Disconnected(self):
+        self.stage_connected = False
 
     @pyqtSlot(float)
     def __Update_Stage_Position(self, position):
@@ -312,6 +315,7 @@ class ConfigWidget(QWidget):
     stage_connect_requested = pyqtSignal(str)
     stage_move_requested = pyqtSignal(float)
     stage_speed_requested = pyqtSignal(float)
+    start_acquisition_requested = pyqtSignal()
 
     def __init__(self, parent=None):
         super(ConfigWidget, self).__init__(parent)
@@ -358,6 +362,7 @@ class ConfigWidget(QWidget):
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_Start_Prompt, self.Stage_Start_Spinbox), 'Horizontal'))
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_End_Prompt, self.Stage_End_Spinbox), 'Horizontal'))
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_Steps_Prompt, self.Stage_Steps_Spinbox), 'Horizontal'))
+        Temp_Layout.addWidget(self.Start_Acquisition_Button)
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Stage Scan')
 
         # Layout.addLayout(self.DesignUtil.Layout_Widget((self.Interval_Prompt, self.Interval_Entry), 'Horizontal'))
@@ -450,6 +455,14 @@ class ConfigWidget(QWidget):
 
         self.Stage_Connection_Button = QPushButton("Now Disconnected. Click to Connect")
 
+        self.Stage_Speed_Prompt = QLabel("Speed")
+        self.Stage_Speed_Prompt.setFixedSize(*LabelSize)
+        self.Stage_Speed_Spinbox = QDoubleSpinBox()
+        self.Stage_Speed_Spinbox.setRange(1E-3, 5)
+        self.Stage_Speed_Spinbox.setValue(0.1)
+        self.Stage_Speed_Spinbox.setSuffix(" mm/s")
+        self.Stage_Speed_Spinbox.setKeyboardTracking(False)
+
         self.Stage_Move_Prompt = QLabel("Stage Control")
         self.Stage_Move_Prompt.setFixedSize(*LabelSize)
         self.Stage_Move_Spinbox = QDoubleSpinBox()
@@ -481,13 +494,8 @@ class ConfigWidget(QWidget):
         self.Stage_Steps_Spinbox.setValue(0.1)
         self.Stage_Steps_Spinbox.setSuffix(" mm")
 
-        self.Stage_Speed_Prompt = QLabel("Speed")
-        self.Stage_Speed_Prompt.setFixedSize(*LabelSize)
-        self.Stage_Speed_Spinbox = QDoubleSpinBox()
-        self.Stage_Speed_Spinbox.setRange(1E-3, 5)
-        self.Stage_Speed_Spinbox.setValue(0.1)
-        self.Stage_Speed_Spinbox.setSuffix(" mm/s")
-        self.Stage_Speed_Spinbox.setKeyboardTracking(False)
+        self.Start_Acquisition_Button = QPushButton("Start Cube Acquisition")
+
 
     def EventProcess(self):
 
@@ -501,6 +509,8 @@ class ConfigWidget(QWidget):
         self.Stage_Connection_Button.clicked.connect(self.StageConnection_Event)
         self.Stage_Move_Spinbox.editingFinished.connect(self.StageMove_Event)
         self.Stage_Speed_Spinbox.editingFinished.connect(lambda: self.stage_speed_requested.emit(self.Stage_Speed_Spinbox.value()))
+
+        self.Start_Acquisition_Button.clicked.connect(self.Start_Event)
 
 
     def CameraConnection_Event(self):
@@ -525,6 +535,9 @@ class ConfigWidget(QWidget):
     def StageMove_Event(self):
         target = self.Stage_Move_Spinbox.value()
         self.stage_move_requested.emit(target)
+
+    def Start_Acquisition_Event(self):
+        self.start_acquisition_requested.emit()
 
 
 class ImagePreviewWidgets(QWidget):
