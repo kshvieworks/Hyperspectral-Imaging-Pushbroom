@@ -68,6 +68,7 @@ class HSIWindow(QWidget):
         self.preview_timer.setInterval(5)
         self.preview_timer.timeout.connect(self.__Update_Camera_Preview)
 
+    # Process Timer
         self.process_timer = QTimer(self)
         self.process_timer.setInterval(100)
         self.process_timer.timeout.connect(self.__Poll_Camera_Process)
@@ -83,9 +84,15 @@ class HSIWindow(QWidget):
         self.acquisition_process = None
         self.acquisition_frame_queue = None
         self.acquisition_status_queue = None
+        self.acquisition_stop_event = None
         self.pending_scan = False
         self.pending_scan_params = None
         self.stage_connected = False
+
+    # Acquisition Timer
+        self.acquisition_timer = QTimer(self)
+        self.acquisition_timer.setInterval(100)
+        self.acquisition_timer.timeout.connect(self.__Poll_Acquisition_Process)
 
     # Define Cube
         self.cube = None
@@ -129,13 +136,42 @@ class HSIWindow(QWidget):
         self.Config.SpectrumY_Spinbox.valueChanged.connect(self.__Spectrum_Position_Changed)
         self.ImagePreview.spectrum_position_selected.connect(self.Config.SpectrumY_Spinbox.setValue)
         self.Config.stage_connect_requested.connect(self.stage_worker.connect_stage)
+        self.Config.stage_disconnect_requested.connect(self.stage_worker.disconnect_stage)
+
         self.Config.stage_move_requested.connect(self.stage_worker.move_to)
         self.Config.stage_speed_requested.connect(self.stage_worker.set_speed)
+        self.Config.start_acquisition_requested.connect(self.Start_Acquisition)
 
         self.stage_worker.connected.connect(self.__Stage_Connected)
         self.stage_worker.position_updated.connect(self.__Update_Stage_Position)
         self.stage_worker.motion_finished.connect(self.__Update_Stage_Position)
         self.stage_worker.error.connect(self.__Stage_Error)
+        self.stage_worker.disconnected.connect(self.__Stage_Disconnected)
+
+    @pyqtSlot()
+    def Start_Acquisition(self):
+        if self.camera_process is not None:
+            QMessageBox.warning(self, "Acquisition", "Disconnect the camera preview first")
+            return
+        if self.stage_connected:
+            QMessageBox.warning(self, 'Acquisition', 'Disconnect the stage manual control first')
+            return
+
+        camera_serial = self.Config.Serial_Entry.text().strip()
+        stage_serial = self.Config.Stage_Serial_Entry.text().strip()
+        exposure = self.Config.Exposure_Spinbox.value()
+        temperature = self.Config.Temperature_Spinbox.value()
+        stage_speed = self.Config.Stage_Speed_Spinbox.value()
+        start_mm = self.Config.Stage_Start_Spinbox.value()
+        end_mm = self.Config.Stage_End_Spinbox.value()
+        step_mm = self.Config.Stage_Steps_Spinbox.value()
+
+        settle_s = 1
+
+        output_path = os.path.join(os.getcwd(), "test_cube.npy")
+
+        self._Start_Acquisition_Process(camera_serial = camera_serial, stage_serial = stage_serial, exposure = exposure, temperature = temperature, stage_speed = stage_speed,
+                                        start_mm = start_mm, end_mm = end_mm, step_mm = step_mm, settle_s = settle_s, output_path = output_path)
 
     def Connect_Camera(self, serial):
         if (self.camera_process is not None and self.camera_process.is_alive()):
@@ -163,9 +199,25 @@ class HSIWindow(QWidget):
     def Camera_Error(self, message):
         QMessageBox.critical(self, "Camera Error", f"{message}")
 
+    def _Start_Acquisition_Process(self, camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, output_path):
+        if (self.acquisition_process is not None and self.acquisition_process.is_alive()):
+            return
+
+        ctx = mp.get_context('spawn')
+        self.acquisition_frame_queue = ctx.Queue(maxsize=3)
+        self.acquisition_status_queue = ctx.Queue()
+        self.acquisition_stop_event = ctx.Event()
+        self.acquisition_process = ctx.Process(target = UP.acquisition_process_main,
+                                               args = (camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, output_path,
+                                                       self.acquisition_frame_queue, self.acquisition_status_queue, self.acquisition_stop_event))
+        self.Config.Start_Acquisition_Button.setEnabled(False)
+        self.Config.Start_Acquisition_Button.setText("Acquisition...")
+        self.acquisition_process.start()
+        self.acquisition_timer.start()
+
     def _Start_Camera_Process(self, serial, exposure, fps, temperature):
         ctx = mp.get_context('spawn')
-        self.camera_frame_queue = ctx.Queue(maxsize=3)
+        self.camera_frame_queue = ctx.Queue(maxsize=1)
         self.camera_status_queue = ctx.Queue()
         self.camera_stop_event = ctx.Event()
 
@@ -200,15 +252,90 @@ class HSIWindow(QWidget):
         self.Config.Connection_Button.setEnabled(True)
         self.Config.Connection_Button.setText("Now Disconnected. Click to Connect")
 
+    def _Acquisition_Process_Finished(self):
+        process = self.acquisition_process
+
+        if process is None:
+            return
+        if process.is_alive():
+            return
+
+        process.join()
+        process.close()
+
+        if self.acquisition_frame_queue is not None:
+            self.acquisition_frame_queue.close()
+        if self.acquisition_status_queue is not None:
+            self.acquisition_status_queue.close()
+
+        self.acquisition_process = None
+        self.acquisition_frame_queue = None
+        self.acquisition_status_queue = None
+        self.acquisition_stop_event = None
+        self.acquisition_timer.stop()
+
+        self.Config.Start_Acquisition_Button.setEnabled(True)
+        self.Config.Start_Acquisition_Button.setText("Start Cube Acquisition")
+
+    def __Update_Acquisition_Frame(self):
+        if self.acquisition_frame_queue is None:
+            return
+        latest_image = None
+        try:
+            while True:
+                latest_image = (self.acquisition_frame_queue.get_nowait())
+        except Empty:
+            pass
+
+        if latest_image is None:
+            return
+
+        self.latest_camera_image = latest_image
+
+        self.__Update_Spectrum_Range(latest_image)
+
+        self.ImagePreview.Update_Preview(latest_image)
+
+        self.__Update_Spectrum()
+
+    @pyqtSlot()
+    def __Poll_Acquisition_Process(self):
+        self.__Update_Acquisition_Frame()
+        if self.acquisition_status_queue is not None:
+            try:
+                while True:
+                    status, data = (self.acquisition_status_queue.get_nowait())
+                    if status == "started":
+                        total = data["lines"]
+                        self.Config.Start_Acquisition_Button.setText(f"Acquiring 0 / {total}")
+                    elif status == "progress":
+                        index = data["index"]
+                        total = data["total"]
+                        position = data["position"]
+                        self.Config.Start_Acquisition_Button.setText(f"Acquiring {index} / {total}")
+                        self.Config.Stage_Position.setText(f"{position:3f} mm")
+                    elif status == "finished":
+                        QMessageBox.information(self, "Acquisition Finished", f"Cube saved:\n{data['path']}")
+                    elif status == "aborted":
+                        QMessageBox.warning(self, "Acquisition Aborted", f"Acquired lines: {data['lines']}")
+                    elif status == "error":
+                        QMessageBox.critical(self, "Acquisition Error", data)
+            except Empty:
+                pass
+
+        if (self.acquisition_process is not None and not self.acquisition_process.is_alive()):
+            self._Acquisition_Process_Finished()
+
     @pyqtSlot(float)
     def __Stage_Connected(self, position):
         self.stage_connected = True
-        self.Config.Stage_Connection_Button.setText("Connected")
+        self.Config.Stage_Connection_Button.setText("Now Connected. Click to Disconnect")
         self.__Update_Stage_Position(position)
 
     @pyqtSlot()
     def __Stage_Disconnected(self):
         self.stage_connected = False
+        self.Config.Stage_Connection_Button.setText("Now Disconnected. Click to Connect")
 
     @pyqtSlot(float)
     def __Update_Stage_Position(self, position):
@@ -313,6 +440,7 @@ class ConfigWidget(QWidget):
     camera_connect_requested = pyqtSignal(str)
     camera_disconnect_requested = pyqtSignal()
     stage_connect_requested = pyqtSignal(str)
+    stage_disconnect_requested = pyqtSignal()
     stage_move_requested = pyqtSignal(float)
     stage_speed_requested = pyqtSignal(float)
     start_acquisition_requested = pyqtSignal()
@@ -490,7 +618,7 @@ class ConfigWidget(QWidget):
         self.Stage_Steps_Prompt = QLabel("Steps")
         self.Stage_Steps_Prompt.setFixedSize(*LabelSize)
         self.Stage_Steps_Spinbox = QDoubleSpinBox()
-        self.Stage_Steps_Spinbox.setRange(0, 50)
+        self.Stage_Steps_Spinbox.setRange(0.001, 50)
         self.Stage_Steps_Spinbox.setValue(0.1)
         self.Stage_Steps_Spinbox.setSuffix(" mm")
 
@@ -510,7 +638,7 @@ class ConfigWidget(QWidget):
         self.Stage_Move_Spinbox.editingFinished.connect(self.StageMove_Event)
         self.Stage_Speed_Spinbox.editingFinished.connect(lambda: self.stage_speed_requested.emit(self.Stage_Speed_Spinbox.value()))
 
-        self.Start_Acquisition_Button.clicked.connect(self.Start_Event)
+        self.Start_Acquisition_Button.clicked.connect(self.Start_Acquisition_Event)
 
 
     def CameraConnection_Event(self):
@@ -526,11 +654,15 @@ class ConfigWidget(QWidget):
             self.camera_disconnect_requested.emit()
 
     def StageConnection_Event(self):
-        serial = self.Stage_Serial_Entry.text().strip()
-        if not serial:
-            QMessageBox.warning(self, "Stage Error", "Please enter a serial number.")
-            return
-        self.stage_connect_requested.emit(serial)
+        if self.Stage_Connection_Button.text() == "Now Disconnected. Click to Connect":
+
+            serial = self.Stage_Serial_Entry.text().strip()
+            if not serial:
+                QMessageBox.warning(self, "Stage Error", "Please enter a serial number.")
+                return
+            self.stage_connect_requested.emit(serial)
+        else:
+            self.stage_disconnect_requested.emit()
 
     def StageMove_Event(self):
         target = self.Stage_Move_Spinbox.value()

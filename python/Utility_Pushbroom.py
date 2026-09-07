@@ -77,6 +77,8 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
     stage = None
     cube = None
 
+    frame_queue.cancel_join_thread()
+
     try:
         # --------------
         # Open Camera
@@ -134,7 +136,7 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
             put_latest(frame_queue, image_now)
 
             # 8. Status
-            status_queue.put(("progress", {"index": i+1, "total": n_lines, "position": float(position_mm),}))
+            status_queue.put(("progress", {"index": i+1, "total": n_lines, "position": np.round(position_mm, 3),}))
 
         # --------------
         # Finished / Aborted
@@ -156,6 +158,11 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
                 stage.stop()
             except Exception:
                 pass
+            try:
+                stage.close()
+            except Exception:
+                pass
+
 
         if camera is not None:
             try:
