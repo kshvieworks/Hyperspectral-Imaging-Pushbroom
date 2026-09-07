@@ -21,12 +21,12 @@ class Controller:
         self.camera.set_metadata_enabled(True)
 
     def Acquire_Frame(self):
-        python_buffer_size = 3
+        python_buffer_size = 1
         self.camera.capture(1, python_buffer_size)
-        image, metadata = self.camera.get_image(5)
+        image, metadata = self.camera.get_image(3)
         return image, metadata
 
-    def Start_Preview(self, fps=10.0, buffer_size=3):
+    def Start_Preview(self, fps=50.0, buffer_size=1):
         self.camera.set_frame_rate_max(fps)
         self.camera.set_frame_rate_max_enabled(True)
         self.camera.capture_video(buffer_size)

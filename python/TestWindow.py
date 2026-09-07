@@ -1,13 +1,10 @@
 """
 Pushbroom HSI User Interface using PyQt
 """
+import os
+os.environ["QT_API"] = "pyqt6"
+
 import pecamerapy
-
-import Utility_Pushbroom
-import Utility_Pyqt as Uqt
-
-# import CameraControl as CC
-import Utility_Pushbroom as UP
 
 import sys
 import numpy as np
@@ -18,16 +15,16 @@ from PyQt6.QtCore import (Qt, QObject, pyqtSignal, pyqtSlot, QTimer, QThread)
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
                              QPushButton, QSlider,
                              QDoubleSpinBox, QComboBox, QSpinBox, QGroupBox, QFileDialog, QMessageBox, QLineEdit, QStyle)
-from qtrangeslider import QRangeSlider
-
-
+from superqt import QRangeSlider
 
 import pyqtgraph as pg
+import Utility_Pyqt as Uqt
+# import CameraControl as CC
+import Utility_Pushbroom as UP
+
 from pylablib.devices import Thorlabs
 from pecamerapy import Camera
 from pecamerapy.include._pecamerapy import Metadata
-
-
 import cv2
 
 STEPS_PER_MM = 1_228_800
@@ -68,7 +65,7 @@ class HSIWindow(QWidget):
         self.latest_camera_image = None
         self.camera_image_flag = False
         self.preview_timer = QTimer(self)
-        self.preview_timer.setInterval(100)
+        self.preview_timer.setInterval(5)
         self.preview_timer.timeout.connect(self.__Update_Camera_Preview)
 
         self.process_timer = QTimer(self)
@@ -79,6 +76,9 @@ class HSIWindow(QWidget):
         self.stage_thread = QThread(self)
         self.stage_worker = UP.StageWorker()
         self.stage_worker.moveToThread(self.stage_thread)
+        self.stage_thread.finished.connect(self.stage_worker.deleteLater)
+        self.stage_thread.start()
+
 
     # Define Cube
         self.cube = None
@@ -124,7 +124,6 @@ class HSIWindow(QWidget):
         self.Config.stage_connect_requested.connect(self.stage_worker.connect_stage)
         self.Config.stage_spin_requested.connect(self.stage_worker.move_to)
 
-
     def Connect_Camera(self, serial):
         if (self.camera_process is not None and self.camera_process.is_alive()):
             return
@@ -145,13 +144,17 @@ class HSIWindow(QWidget):
         self.Config.Connection_Button.setText("Disconnecting...")
         self.camera_stop_event.set()
 
+    # def Connect_Stage(self, serial):
+
+
+
     @pyqtSlot(str)
     def Camera_Error(self, message):
         QMessageBox.critical(self, "Camera Error", f"{message}")
 
     def _Start_Camera_Process(self, serial, exposure, fps, temperature):
         ctx = mp.get_context('spawn')
-        self.camera_frame_queue = ctx.Queue(maxsize=1)
+        self.camera_frame_queue = ctx.Queue(maxsize=3)
         self.camera_status_queue = ctx.Queue()
         self.camera_stop_event = ctx.Event()
 
@@ -326,7 +329,6 @@ class ConfigWidget(QWidget):
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_Move_Prompt, self.Stage_Move_Spinbox, self.Stage_Position), 'Horizontal'))
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Stage Settings')
 
-
         Temp_Layout = QVBoxLayout()
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_Start_Prompt, self.Stage_Start_Spinbox), 'Horizontal'))
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_End_Prompt, self.Stage_End_Spinbox), 'Horizontal'))
@@ -380,7 +382,7 @@ class ConfigWidget(QWidget):
         self.FPS_Prompt = QLabel("Frame Rate")
         self.FPS_Prompt.setFixedSize(*LabelSize)
         self.FPS_Spinbox = QDoubleSpinBox()
-        self.FPS_Spinbox.setValue(30)
+        self.FPS_Spinbox.setValue(50)
         self.FPS_Spinbox.setRange(0.1, 1000)
         self.FPS_Spinbox.setSuffix(" fps")
 
@@ -392,7 +394,8 @@ class ConfigWidget(QWidget):
     # UI for Preview Configuration
         self.ROI_Prompt = QLabel("ROI")
         self.ROI_Prompt.setFixedSize(*LabelSize)
-        self.ROI_Slider = QRangeSlider(Qt.Orientation.Horizontal)
+        self.ROI_Slider = QRangeSlider()
+        self.ROI_Slider.setOrientation(Qt.Orientation.Horizontal)
         self.ROI_Slider.setRange(0, 511)
         self.ROI_Slider.setValue((0, 511))
         self.ROI_Slider.setSingleStep(1)
@@ -515,7 +518,8 @@ class ImagePreviewWidgets(QWidget):
         self.PreviewLabel.setScaledContents(False)
         self.PreviewLabel.setStyleSheet("border: 1px solid gray;")
 
-        self.ColorRange_Slider = QRangeSlider(Qt.Orientation.Horizontal)
+        self.ColorRange_Slider = QRangeSlider()
+        self.ColorRange_Slider.setOrientation(Qt.Orientation.Horizontal)
         self.ColorRange_Slider.setRange(0, 2**16-1)
         self.ColorRange_Slider.setValue((0, 2**16-1))
         self.ColorRange_Slider.setSingleStep(1)

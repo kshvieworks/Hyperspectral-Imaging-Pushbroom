@@ -38,7 +38,7 @@ class Controller:
     def close(self):
         self.stage.close()
 
-    def _is_moving(self):
+    def is_moving(self):
         return self.stage.is_moving()
 
 

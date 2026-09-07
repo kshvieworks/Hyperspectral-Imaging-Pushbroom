@@ -30,7 +30,7 @@ def camera_process_main(serial, exposure, fps, temperature, frame_queue, status_
         camera = CC.Controller(serial)
         camera.open()
         camera.Configure(exposure_s = exposure, temperature_c = temperature)
-        camera.Start_Preview(fps=fps, buffer_size=3)
+        camera.Start_Preview(fps=fps, buffer_size=1)
         status_queue.put(("connected", None))
         while not stop_event.is_set():
             image, metadata = camera.Get_Preview_Frame(timeout_s = 1)
@@ -136,6 +136,7 @@ class AcquisitionWorker(QObject):
 
 class StageWorker(QObject):
     connected = pyqtSignal(float)
+    disconnected = pyqtSignal()
     position_updated = pyqtSignal(float)
     motion_started = pyqtSignal()
     motion_finished = pyqtSignal(float)
@@ -146,7 +147,7 @@ class StageWorker(QObject):
 
         self.stage = None
 
-        self.motion_timer = QTimer()
+        self.motion_timer = QTimer(self)
         self.motion_timer.setInterval(50)
         self.motion_timer.timeout.connect(self._poll_motion)
 
@@ -154,11 +155,27 @@ class StageWorker(QObject):
     def connect_stage(self, stage):
 
         try:
-            self.stage = SC.Controller
-            position = self.stage.position
+            self.stage = SC.Controller(stage)
+            position = self.stage.position()
             self.connected.emit(position)
         except Exception as e:
             self.error.emit(f"{type(e).__name__}: {e}")
+
+    @pyqtSlot()
+    def disconnect_stage(self):
+        if self.stage is None:
+            return
+        try:
+            if self.motion_timer.isActive():
+                self.motion_timer.stop()
+            if self.stage.is_moving():
+                self.stage.stop()
+            self.stage.close()
+            self.stage = None
+            self.disconnected.emit()
+        except Exception as e:
+            self.error.emit(f"{type(e).__name__}: {e}")
+
 
     @pyqtSlot(float)
     def move_to(self, position):
