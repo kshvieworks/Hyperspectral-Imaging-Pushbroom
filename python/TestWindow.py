@@ -122,7 +122,8 @@ class HSIWindow(QWidget):
         self.Config.SpectrumY_Spinbox.valueChanged.connect(self.__Spectrum_Position_Changed)
         self.ImagePreview.spectrum_position_selected.connect(self.Config.SpectrumY_Spinbox.setValue)
         self.Config.stage_connect_requested.connect(self.stage_worker.connect_stage)
-        self.Config.stage_jog_requested.connect(self.stage_worker.move_to)
+        self.Config.stage_move_requested.connect(self.stage_worker.move_to)
+        self.Config.stage_speed_requested.connect(self.stage_worker.set_speed)
 
         self.stage_worker.connected.connect(self.__Stage_Connected)
         self.stage_worker.position_updated.connect(self.__Update_Stage_Position)
@@ -301,8 +302,7 @@ class ConfigWidget(QWidget):
     camera_disconnect_requested = pyqtSignal()
     stage_connect_requested = pyqtSignal(str)
     stage_move_requested = pyqtSignal(float)
-    stage_jog_requested = pyqtSignal(float)
-
+    stage_speed_requested = pyqtSignal(float)
 
     def __init__(self, parent=None):
         super(ConfigWidget, self).__init__(parent)
@@ -447,6 +447,7 @@ class ConfigWidget(QWidget):
         self.Stage_Move_Spinbox.setRange(0, 50)
         self.Stage_Move_Spinbox.setValue(0)
         self.Stage_Move_Spinbox.setSuffix(" mm")
+        self.Stage_Move_Spinbox.setKeyboardTracking(False)
 
         self.Stage_Position = QLabel("0")
 
@@ -477,6 +478,7 @@ class ConfigWidget(QWidget):
         self.Stage_Speed_Spinbox.setRange(1E-3, 5)
         self.Stage_Speed_Spinbox.setValue(0.1)
         self.Stage_Speed_Spinbox.setSuffix(" mm/s")
+        self.Stage_Speed_Spinbox.setKeyboardTracking(False)
 
     def EventProcess(self):
 
@@ -488,6 +490,9 @@ class ConfigWidget(QWidget):
         self.SpectrumY_Spinbox.valueChanged.connect(self.SpectrumY_Slider.setValue)
 
         self.Stage_Connection_Button.clicked.connect(self.StageConnection_Event)
+        self.Stage_Move_Spinbox.editingFinished.connect(self.StageMove_Event)
+        self.Stage_Speed_Spinbox.editingFinished.connect(lambda: self.stage_speed_requested.emit(self.Stage_Speed_Spinbox.value()))
+
 
     def CameraConnection_Event(self):
         if self.Connection_Button.text() == "Now Disconnected. Click to Connect":
@@ -506,8 +511,11 @@ class ConfigWidget(QWidget):
         if not serial:
             QMessageBox.warning(self, "Stage Error", "Please enter a serial number.")
             return
-
         self.stage_connect_requested.emit(serial)
+
+    def StageMove_Event(self):
+        target = self.Stage_Move_Spinbox.value()
+        self.stage_move_requested.emit(target)
 
 
 class ImagePreviewWidgets(QWidget):
