@@ -45,6 +45,8 @@ class Controller:
 # VELOCITY_SCALE = 65_961_984
 # ACCEL_SCALE = 13_584.249
 
+# from pylablib.devices import Thorlabs
+
 # stage = Thorlabs.KinesisMotor(SERIAL, scale=(POSITION_SCALE, VELOCITY_SCALE, ACCEL_SCALE))
 
 #
