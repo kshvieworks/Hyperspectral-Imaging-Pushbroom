@@ -19,6 +19,9 @@ class Controller:
         self.stage.move_by(float(distance_mm))
         # self.stage.wait_move()
 
+    def wait_move(self):
+        self.stage.wait_move()
+
     def jog(self, distance_mm):
         self.stage.move_by(float(distance_mm))
 

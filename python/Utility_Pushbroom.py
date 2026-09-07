@@ -10,6 +10,10 @@ import time
 
 from pecamerapy.include._pecamerapy import Metadata
 
+'''
+Manual Control for Camera
+'''
+
 def put_latest(queue, data):
     try:
         queue.put_nowait(data)
@@ -54,85 +58,115 @@ def camera_process_main(serial, exposure, fps, temperature, frame_queue, status_
         except Exception:
             pass
 
+'''
+Cube Builder
+'''
 
-class AcquisitionWorker(QObject):
+def build_scan_positions(start_mm, end_mm, step_mm):
+    if step_mm <= 0:
+        raise ValueError("Step size must be greater than 0")
+    if end_mm < start_mm:
+        raise ValueError("End mm must be greater than start position.")
 
-    frame_ready = pyqtSignal(np.ndarray, float, int)
-    spectrum_ready = pyqtSignal(np.ndarray)
-    progress = pyqtSignal(int, int)
-    position_changed = pyqtSignal(float)
-    finished = pyqtSignal(np.ndarray)
-    error = pyqtSignal(str)
-    status = pyqtSignal(str)
+    n_steps = int(np.floor((end_mm - start_mm)/step_mm)) + 1
+    positions = (start_mm + np.arange(n_steps) * step_mm)
+    return positions
 
-    def __init__(self, stage, camera, start_mm, stop_mm, step_mm, exposure_s):
-        super().__init__()
-        self.stage = stage
-        self.camera = camera
-        self.start_mm = start_mm
-        self.stop_mm = stop_mm
-        self.step_mm = step_mm
-        self.exposure_s = exposure_s
+def acquisition_process_main(camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, output_path, frame_queue, status_queue, stop_event):
+    camera = None
+    stage = None
+    cube = None
 
-        self.running = True
+    try:
+        # --------------
+        # Open Camera
+        # --------------
+        camera = CC.Controller(camera_serial)
+        camera.open()
+        camera.Configure(exposure_s = exposure, temperature_c = temperature)
 
-    @pyqtSlot()
-    def run(self):
-        try:
+        # --------------
+        # Open Stage
+        # --------------
+        stage = SC.Controller(stage_serial)
+        stage.set_speed(stage_speed)
 
-            self.camera.configure(self.exposure_s)
+        # --------------
+        # Build Positions
+        # --------------
+        positions = build_scan_positions(start_mm, end_mm, step_mm)
+        n_lines = len(positions)
+        status_queue.put(("started", {"lines": n_lines}))
 
-            positions = np.arange(self.start_mm, self.stop_mm + self.step_mm/2, self.step_mm,)
-            n_lines = len(positions)
-            self.status.emit(f"Acquisition started: {n_lines}")
+        acquired_lines = 0
 
+        # --------------
+        # Step and Shoot
+        # --------------
+        for i, position_mm in enumerate(positions):
+            if stop_event.is_set():
+                break
 
-            cubes = []
+            # 1. Move
+            stage.move_to(position_mm)
 
-            for i, position_mm in enumerate(positions):
-                if not self.running:
-                    break
+            # 2. Wait
+            stage.wait_move()
+            if stop_event.is_set():
+                break
 
-                #1. Move Stage
-                self.status.emit(f"Moving stage: {position_mm:.3f} mm")
-                self.stage.move_to(position_mm)
-                self.position_changed.emit(position_mm)
+            # 3. Settling
+            if settle_s > 0:
+                time.sleep(settle_s)
 
-                #2. Acquire Camera Frame
-                self.status.emit(f"Acquiring line {i+1}/{n_lines}")
-                image_now, metadata = self.camera.Acquire_Frame()
+            # 4. Capture
+            image_now, metadata = (camera.Acquire_Frame())
 
-                #3. Store Cube
-                cubes.append(image_now)
+            # 5. Allocate Cube at first frame
+            if cube is None:
+                cube = np.empty((n_lines, image_now.shape[0], image_now.shape[1]), dtype = image_now.dtype)
 
-                #4. Current Spectrum
-                spectrum_now = np.mean(image_now, axis=0)
+            # 6. Store
+            cube[i, :, :] = image_now
+            acquired_lines += 1
 
-                #5. Emit data to main UI
-                self.frame_ready.emit(image_now, position_mm, i)
-                self.spectrum_ready.emit(spectrum_now)
-                self.progress.emit(i+1, n_lines)
+            # 7. Send latest frame
+            put_latest(frame_queue, image_now)
 
-            if len(cubes) > 0:
-                cubes = np.array(cubes)
-            else:
-                cubes =np.empty((0, 0, 0), dtype=np.float32)
+            # 8. Status
+            status_queue.put(("progress", {"index": i+1, "total": n_lines, "position": float(position_mm),}))
 
-            self.status.emit("Acquisition Finished")
-            self.finished.emit(cubes)
+        # --------------
+        # Finished / Aborted
+        # --------------
+        if cube is not None:
+            cube = cube[:acquired_lines]
+            np.save(output_path, cube)
 
-        except Exception as e:
-            self.error.emit(f"{type(e).__name__}: {e}")
+        if stop_event.is_set():
+            status_queue.put(("aborted", {"lines": acquired_lines, "path": output_path,}))
+        else:
+            status_queue.put(("finished", {"lines": acquired_lines, "path": output_path,}))
 
+    except Exception as e:
+        status_queue.put(("error", f"{type(e).__name__}: {e}"))
+    finally:
+        if stage is not None:
+            try:
+                stage.stop()
+            except Exception:
+                pass
 
-    def abort(self):
-        self.running = False
+        if camera is not None:
+            try:
+                camera.Stop_Acquisition()
+            except Exception:
+                pass
 
-        try:
-            self.stage.stop()
-        except Exception:
-            pass
-
+            try:
+                camera.close()
+            except Exception:
+                pass
 
 class StageWorker(QObject):
     connected = pyqtSignal(float)

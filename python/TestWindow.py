@@ -79,6 +79,15 @@ class HSIWindow(QWidget):
         self.stage_thread.finished.connect(self.stage_worker.deleteLater)
         self.stage_thread.start()
 
+    # Cube Acquisition Process
+        self.acquisition_process = None
+        self.acquisition_frame_queue = None
+        self.acquisition_status_queue = None
+        self.pending_scan = False
+        self.pending_scan_params = None
+        self.stage_connected = False
+
+
 
     # Define Cube
         self.cube = None
