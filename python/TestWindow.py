@@ -122,7 +122,12 @@ class HSIWindow(QWidget):
         self.Config.SpectrumY_Spinbox.valueChanged.connect(self.__Spectrum_Position_Changed)
         self.ImagePreview.spectrum_position_selected.connect(self.Config.SpectrumY_Spinbox.setValue)
         self.Config.stage_connect_requested.connect(self.stage_worker.connect_stage)
-        self.Config.stage_spin_requested.connect(self.stage_worker.move_to)
+        self.Config.stage_jog_requested.connect(self.stage_worker.move_to)
+
+        self.stage_worker.connected.connect(self.__Stage_Connected)
+        self.stage_worker.position_updated.connect(self.__Update_Stage_Position)
+        self.stage_worker.motion_finished.connect(self.__Update_Stage_Position)
+        self.stage_worker.error.connect(self.__Stage_Error)
 
     def Connect_Camera(self, serial):
         if (self.camera_process is not None and self.camera_process.is_alive()):
@@ -145,8 +150,6 @@ class HSIWindow(QWidget):
         self.camera_stop_event.set()
 
     # def Connect_Stage(self, serial):
-
-
 
     @pyqtSlot(str)
     def Camera_Error(self, message):
@@ -188,6 +191,19 @@ class HSIWindow(QWidget):
         self.camera_stop_event = None
         self.Config.Connection_Button.setEnabled(True)
         self.Config.Connection_Button.setText("Now Disconnected. Click to Connect")
+
+    @pyqtSlot(float)
+    def __Stage_Connected(self, position):
+        self.Config.Stage_Connection_Button.setText("Connected")
+        self.__Update_Stage_Position(position)
+
+    @pyqtSlot(float)
+    def __Update_Stage_Position(self, position):
+        self.Config.Stage_Position.setText(f"{position:3f} mm")
+
+    @pyqtSlot(str)
+    def __Stage_Error(self, message):
+        QMessageBox.critical(self, "Stage Error", f"{message}")
 
     @pyqtSlot()
     def __Update_Camera_Preview(self):
@@ -285,7 +301,7 @@ class ConfigWidget(QWidget):
     camera_disconnect_requested = pyqtSignal()
     stage_connect_requested = pyqtSignal(str)
     stage_move_requested = pyqtSignal(float)
-    stage_spin_requested = pyqtSignal(float)
+    stage_jog_requested = pyqtSignal(float)
 
 
     def __init__(self, parent=None):
@@ -471,6 +487,8 @@ class ConfigWidget(QWidget):
         self.SpectrumY_Slider.valueChanged.connect(self.SpectrumY_Spinbox.setValue)
         self.SpectrumY_Spinbox.valueChanged.connect(self.SpectrumY_Slider.setValue)
 
+        self.Stage_Connection_Button.clicked.connect(self.StageConnection_Event)
+
     def CameraConnection_Event(self):
         if self.Connection_Button.text() == "Now Disconnected. Click to Connect":
             serial = self.Serial_Entry.text().strip()
@@ -482,6 +500,14 @@ class ConfigWidget(QWidget):
             self.camera_connect_requested.emit(serial)
         else:
             self.camera_disconnect_requested.emit()
+
+    def StageConnection_Event(self):
+        serial = self.Stage_Serial_Entry.text().strip()
+        if not serial:
+            QMessageBox.warning(self, "Stage Error", "Please enter a serial number.")
+            return
+
+        self.stage_connect_requested.emit(serial)
 
 
 class ImagePreviewWidgets(QWidget):

@@ -30,10 +30,7 @@ class Controller:
         self.stage.setup_velocity(max_velocity=float(speed_mm_s))
 
     def stop(self):
-        try:
             self.stage.stop()
-        except Exception:
-            pass
 
     def close(self):
         self.stage.close()
