@@ -139,6 +139,7 @@ class HSIWindow(QWidget):
         self.Config.stage_disconnect_requested.connect(self.stage_worker.disconnect_stage)
 
         self.Config.stage_move_requested.connect(self.stage_worker.move_to)
+        self.Config.stage_home_requested.connect(self.stage_worker.home)
         self.Config.stage_speed_requested.connect(self.stage_worker.set_speed)
         self.Config.start_acquisition_requested.connect(self.Start_Acquisition)
 
@@ -442,6 +443,7 @@ class ConfigWidget(QWidget):
     stage_connect_requested = pyqtSignal(str)
     stage_disconnect_requested = pyqtSignal()
     stage_move_requested = pyqtSignal(float)
+    stage_home_requested = pyqtSignal()
     stage_speed_requested = pyqtSignal(float)
     start_acquisition_requested = pyqtSignal()
 
@@ -449,7 +451,6 @@ class ConfigWidget(QWidget):
         super(ConfigWidget, self).__init__(parent)
 
         Layout = QVBoxLayout()
-
         self.initUI(Layout)
         self.setLayout(Layout)
 
@@ -483,7 +484,7 @@ class ConfigWidget(QWidget):
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_Serial_Prompt, self.Stage_Serial_Entry), 'Horizontal'))
         Temp_Layout.addWidget(self.Stage_Connection_Button)
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_Speed_Prompt, self.Stage_Speed_Spinbox), 'Horizontal'))
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_Move_Prompt, self.Stage_Move_Spinbox, self.Stage_Position), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Stage_Move_Prompt, self.Stage_Move_Spinbox, self.Stage_Home_Button, self.Stage_Position), 'Horizontal'))
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Stage Settings')
 
         Temp_Layout = QVBoxLayout()
@@ -501,7 +502,7 @@ class ConfigWidget(QWidget):
 
     def UI_Component(self):
 
-        ButtonSize = (100, 40)
+        ButtonSize = (75, 30)
         LabelSize = (150, 30)
         EntrySize = (200, 30)
 
@@ -599,6 +600,10 @@ class ConfigWidget(QWidget):
         self.Stage_Move_Spinbox.setSuffix(" mm")
         self.Stage_Move_Spinbox.setKeyboardTracking(False)
 
+        self.Stage_Home_Button = QPushButton("Init")
+        self.Stage_Home_Button.setFixedSize(*ButtonSize)
+
+
         self.Stage_Position = QLabel("0")
 
         self.Stage_Start_Prompt = QLabel("Start Position")
@@ -637,6 +642,7 @@ class ConfigWidget(QWidget):
         self.Stage_Connection_Button.clicked.connect(self.StageConnection_Event)
         self.Stage_Move_Spinbox.editingFinished.connect(self.StageMove_Event)
         self.Stage_Speed_Spinbox.editingFinished.connect(lambda: self.stage_speed_requested.emit(self.Stage_Speed_Spinbox.value()))
+        self.Stage_Home_Button.clicked.connect(self.StageHome_Event)
 
         self.Start_Acquisition_Button.clicked.connect(self.Start_Acquisition_Event)
 
@@ -667,6 +673,9 @@ class ConfigWidget(QWidget):
     def StageMove_Event(self):
         target = self.Stage_Move_Spinbox.value()
         self.stage_move_requested.emit(target)
+
+    def StageHome_Event(self):
+        self.stage_home_requested.emit()
 
     def Start_Acquisition_Event(self):
         self.start_acquisition_requested.emit()
