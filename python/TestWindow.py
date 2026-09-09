@@ -113,7 +113,7 @@ class HSIWindow(QWidget):
 
         self.init_ConfigureTab(ConfigLayout)
         self.init_Preview(PreviewLayout)
-        # self.init_StatusLayout(StatusLayout)
+        self.init_StatusLayout(StatusLayout)
         self.EventProcess()
 
         # self.Config.ImagePath.connect(self.Preview.Load_Image)
@@ -123,12 +123,15 @@ class HSIWindow(QWidget):
         self.Config = ConfigWidget()
         ConfigLayout.addWidget(self.Config)
 
-
     def init_Preview(self, PreviewLayout):
         self.ImagePreview = ImagePreviewWidgets()
         self.SpectrumPreview = SpectrumPreviewWidgets()
         PreviewLayout.addWidget(self.ImagePreview)
         PreviewLayout.addWidget(self.SpectrumPreview)
+
+    def init_StatusLayout(self, StatusLayout):
+        self.Status = StatusWidgets()
+        StatusLayout.addWidget(self.Status)
 
     def EventProcess(self):
         self.Config.camera_connect_requested.connect(self.Connect_Camera)
@@ -431,10 +434,6 @@ class HSIWindow(QWidget):
 
     def __SaveMetadata(self, metadata):
         self.Metadata = None
-
-    # def init_StatusLayout(self, StatusLayout):
-    #     self.Status = StatusWidget()
-    #     StatusLayout.addWidget(self.Status)
 
 
 class ConfigWidget(QWidget):
@@ -786,191 +785,131 @@ class SpectrumPreviewWidgets(QWidget):
         self.curve.setData(wavelength, intensity)
 
 
-# class PreviewWidget(QtWidgets.QWidget):
-#     def __init__(self, parent=None):
-#         super(PreviewWidget, self).__init__(parent)
-#
-#         self.DesignUtil = util.WidgetDesign()
-#         self.CustomFunction = util.CustomFunction()
-#
-#         PreviewLayout = QtWidgets.QVBoxLayout()
-#         self.initUI(PreviewLayout)
-#         self.setLayout(PreviewLayout)
-#
-#         self.DarkImage, self.FlatImage, self.Image, self.Corrected_Image, self.Image_Folderpath = 0, 0, 0, 0, ""
-#         self.use_dark, self.use_flat = True, True
-#         self.is_playing = False
-#         self.timer = QtCore.QTimer(self)
-#         self.timer.timeout.connect(self.Update_Image)
-#         # self.VideoThread()
-#
-#     def initUI(self, Layout):
-#
-#         self.UI_Component()
-#         self.UI_Layout(Layout)
-#         self.EventProcess()
-#
-#     def UI_Layout(self, Layout):
-#
-#         # PreviewStackLayout = QtWidgets.QStackedLayout()
-#         # PreviewStackLayout.addWidget(self.PreviewLabel)
-#         self.PreviewLabel.setAlignment(QtCore.Qt.AlignmentFlag.AlignCenter)
-#         Layout.addWidget(self.PreviewLabel)
-#         Layout.addWidget(self.PauseResume_Button, alignment=QtCore.Qt.AlignmentFlag.AlignCenter)
-#
-#         ContrastLayout = QtWidgets.QGridLayout()
-#         ContrastLayout.addWidget(QtWidgets.QLabel("Min:"), 0, 0)
-#         ContrastLayout.addWidget(self.vmin_slider, 0, 1)
-#         ContrastLayout.addWidget(self.vmin_spin, 0, 2)
-#
-#         ContrastLayout.addWidget(QtWidgets.QLabel("Max:"), 1, 0)
-#         ContrastLayout.addWidget(self.vmax_slider, 1, 1)
-#         ContrastLayout.addWidget(self.vmax_spin, 1, 2)
-#
-#         ContrastGroup = QtWidgets.QGroupBox("Contrast Control")
-#         ContrastGroup.setLayout(ContrastLayout)
-#         Layout.addWidget(ContrastGroup)
-#
-#     def UI_Component(self):
-#
-#         self.PreviewLabel = QtWidgets.QLabel("Waiting for Images ...")
-#         self.PreviewLabel.setMinimumSize(512, 512)
-#         self.PreviewLabel.setStyleSheet("border: 1px solid gray;")
-#
-#
-#         # Colorbar
-#         max_12bit = 4095
-#
-#         self.vmin_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-#         self.vmin_slider.setRange(0, max_12bit)
-#         self.vmin_slider.setValue(0)
-#
-#         self.vmin_spin = QtWidgets.QSpinBox()
-#         self.vmin_spin.setRange(0, max_12bit)
-#         self.vmin_spin.setValue(0)
-#
-#         self.vmax_slider = QtWidgets.QSlider(QtCore.Qt.Orientation.Horizontal)
-#         self.vmax_slider.setRange(0, max_12bit)
-#         self.vmax_slider.setValue(max_12bit)
-#
-#         self.vmax_spin = QtWidgets.QSpinBox()
-#         self.vmax_spin.setRange(0, max_12bit)
-#         self.vmax_spin.setValue(max_12bit)
-#
-#     def EventProcess(self):
-#         self.PauseResume_Button.clicked.connect(lambda checked=False: self.VideoActiveControl(self.PauseResume_Button))
-#
-#         self.vmin_slider.valueChanged.connect(self.vmin_spin.setValue)
-#         self.vmin_spin.valueChanged.connect(self.vmin_slider.setValue)
-#
-#         self.vmax_slider.valueChanged.connect(self.vmax_spin.setValue)
-#         self.vmax_spin.valueChanged.connect(self.vmax_slider.setValue)
-#
-#         self.vmin_slider.valueChanged.connect(self.Update_Display)
-#         self.vmax_slider.valueChanged.connect(self.Update_Display)
-#
-#     def Update_Correction_State(self, imagetype, state):
-#         if imagetype == 'Dark':
-#             self.use_dark = state
-#         if imagetype == 'Flat':
-#             self.use_flat = state
-#
-#         if (self.Image_Folderpath and not self.is_playing):
-#             self.Update_Image()
-#
-#
-#     # Parameters for Read_Image Call back function should be modified as value from user by entries.
-#     def Load_Image(self, identifier, path, imagetype):
-#
-#         if identifier == 'File':
-#             if imagetype == 'Dark':
-#                 self.DarkImage = util.CustomFunction.Read_Image(path, 'bin', np.uint16, (512, 512))
-#
-#             elif imagetype == 'Flat':
-#                 self.FlatImage = util.CustomFunction.Read_Image(path, 'bin', np.uint16, (512, 512))
-#             else:
-#                 print("Image file must be Dark or Flat")
-#         elif identifier == 'Folder':
-#             if path:
-#                 self.Image_Folderpath = path
-#                 self.Update_Image()
-#
-#     def Update_Image(self):
-#
-#         self.Image = util.CustomFunction.Read_Image(self.Image_Folderpath, 'bin', np.uint16, (512, 512))
-#         dark = self.DarkImage if self.use_dark else 0
-#         flat = self.FlatImage if self.use_flat else 0
-#         self.Corrected_Image = self.Apply_Corrections(self.Image, dark, flat)
-#         self.Update_Display()
-#
-#     @staticmethod
-#     def Apply_Corrections(Image, Dark = 0, Flat = 0):
-#
-#         if Image is None or Image.size == 0:
-#             return
-#
-#         Corrected_Image = Image.copy().astype(np.float64)
-#         Corrected_Image = Corrected_Image - Dark
-#         Corrected_Image = np.clip(Corrected_Image, -500, None)
-#
-#         Corrected_Flat = Flat - Dark
-#         Corrected_Flat = np.clip(Corrected_Flat, -500, None)
-#
-#         Flat_safe = np.where(Corrected_Flat == 0, 1, Corrected_Flat)
-#         Corrected_Image = np.average(Flat_safe) * Corrected_Image / Flat_safe
-#         return Corrected_Image
-#
-#     def Update_Display(self):
-#
-#         if self.Corrected_Image is None or self.Corrected_Image.size == 0:
-#             return
-#
-#         vmin = self.vmin_slider.value()
-#         vmax = self.vmax_slider.value()
-#
-#         if vmin >= vmax:
-#             vmin = vmax - 1
-#
-#         pixmap = util.CustomFunction.cv2qt(self.Corrected_Image, vmin, vmax)
-#         if pixmap:
-#             self.PreviewLabel.setPixmap(pixmap)
-#
-#     def VideoActiveControl(self, PauseResume_Button):
-#         if not self.is_playing:
-#             self.timer.start(100)
-#             self.is_playing = True
-#             PauseResume_Button.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPause))
-#
-#         else:
-#             self.timer.stop()
-#             self.is_playing = False
-#             PauseResume_Button.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPlay))
+class StatusWidgets(QWidget):
+    wavelength_range_selected = pyqtSignal(int)
+
+    def __init__(self, parent=None):
+        super(StatusWidgets, self).__init__(parent)
+
+        Layout = QVBoxLayout()
+        self.initUI(Layout)
+        self.setLayout(Layout)
+
+    def initUI(self, Layout):
+
+        self.UI_Component()
+        self.UI_Layout(Layout)
+        self.EventProcess()
+
+    def UI_Layout(self, Layout):
+
+        Temp_Layout = QVBoxLayout()
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Status_Camera_Prompt), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Status_SensorTemp_Prompt), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Status_AcquiredFrames_Prompt), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Status_FPS_Prompt), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Status_CPU_Prompt), 'Horizontal'))
+        Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Acquisition Status')
+
+        Temp_Layout = QVBoxLayout()
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_FrameID_Prompt), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_TimeStamp_Prompt), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_ExposureTime_Prompt), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_SensorTemp_Prompt), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_ImageSize_Prompt), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_Gain_Prompt), 'Horizontal'))
+        row1.
+        Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Metadata (Last Frame)')
+
+        Temp_Layout = QVBoxLayout()
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Calibration_Wavelength_Prompt), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Calibration_Wavelength_StartPixel_Prompt, self.Calibration_Wavelength_StartPixel_Spinbox,
+                                                             self.Calibration_Wavelength_Startwl_Prompt, self.Calibration_Wavelength_Startwl_Spinbox), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Calibration_Wavelength_EndPixel_Prompt, self.Calibration_Wavelength_EndPixel_Spinbox,
+                                                             self.Calibration_Wavelength_Endwl_Prompt, self.Calibration_Wavelength_Endwl_Spinbox), 'Horizontal'))
+        Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Calibration')
+
+        Temp_Layout = QVBoxLayout()
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Save_Button), 'Horizontal'))
+        Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Post Processing')
 
 
 
-    #
-    # def VideoThread(self):
-    #
-    #     asdf = 1
-    #     # self.Video = AP.getFrame()
-    #     # QtCore.QCoreApplication.processEvents()
-    #     # self.Video.FrameUpdate.connect(self.FrameUpdateSlot)
-    #     # self.Video.start()
-    #
-    # def FrameUpdateSlot(self, Image):
-    #     qtImage = self.CustomFunction.cv2qt(Image)
-    #     self.PreviewLabel.setPixmap(qtImage)
-    #
-    # def VideoActiveControl(self, BTN):
-    #     if self.Video.ThreadActive == False:
-    #         BTN.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPause))
-    #         self.Video.ThreadActive = True
-    #         self.Video.start()
-    #     else:
-    #         BTN.setIcon(self.style().standardIcon(QtWidgets.QStyle.StandardPixmap.SP_MediaPlay))
-    #         self.Video.ThreadActive = False
-    #         # self.AOAutoScanStatus = False
+    def UI_Component(self):
 
+        ButtonSize = (75, 30)
+        LabelSize = (150, 30)
+        EntrySize = (200, 30)
+
+    # UI for Camera Settings
+        self.Status_Camera_Prompt = QLabel("Status")
+        self.Status_Camera_Prompt.setFixedSize(*LabelSize)
+
+        self.Status_SensorTemp_Prompt = QLabel("Sensor Temperature")
+        self.Status_SensorTemp_Prompt.setFixedSize(*LabelSize)
+
+        self.Status_AcquiredFrames_Prompt = QLabel("Frames Acquired")
+        self.Status_AcquiredFrames_Prompt.setFixedSize(*LabelSize)
+
+        self.Status_FPS_Prompt = QLabel("FPS")
+        self.Status_FPS_Prompt.setFixedSize(*LabelSize)
+
+        self.Status_CPU_Prompt = QLabel("CPU Usage")
+        self.Status_CPU_Prompt.setFixedSize(*LabelSize)
+
+        self.Meta_FrameID_Prompt = QLabel("Frame ID")
+        self.Meta_FrameID_Prompt.setFixedSize(*LabelSize)
+
+        self.Meta_TimeStamp_Prompt = QLabel("Time Stamp")
+        self.Meta_TimeStamp_Prompt.setFixedSize(*LabelSize)
+
+        self.Meta_ExposureTime_Prompt = QLabel("Exposure Time")
+        self.Meta_ExposureTime_Prompt.setFixedSize(*LabelSize)
+
+        self.Meta_SensorTemp_Prompt = QLabel("Sensor Temperature")
+        self.Meta_SensorTemp_Prompt.setFixedSize(*LabelSize)
+
+        self.Meta_ImageSize_Prompt = QLabel("Image Size")
+        self.Meta_ImageSize_Prompt.setFixedSize(*LabelSize)
+
+        self.Meta_Gain_Prompt = QLabel("Analog Gain")
+        self.Meta_Gain_Prompt.setFixedSize(*LabelSize)
+
+        self.Calibration_Wavelength_Prompt = QLabel("Wavelength Range")
+        self.Calibration_Wavelength_Prompt.setFixedSize(*LabelSize)
+
+        self.Calibration_Wavelength_StartPixel_Prompt = QLabel("Pixel (Left)")
+        # self.Calibration_Wavelength_StartPixel_Prompt.setFixedSize(*LabelSize)
+        self.Calibration_Wavelength_StartPixel_Spinbox = QSpinBox()
+        self.Calibration_Wavelength_StartPixel_Spinbox.setValue(0)
+        self.Calibration_Wavelength_StartPixel_Spinbox.setKeyboardTracking(False)
+
+        self.Calibration_Wavelength_Startwl_Prompt = QLabel("λ")
+        # self.Calibration_Wavelength_Startwl_Prompt.setFixedSize(*LabelSize)
+        self.Calibration_Wavelength_Startwl_Spinbox = QSpinBox()
+        self.Calibration_Wavelength_Startwl_Spinbox.setRange(400, 2000)
+        self.Calibration_Wavelength_Startwl_Spinbox.setValue(900)
+        self.Calibration_Wavelength_Startwl_Spinbox.setSuffix(" nm")
+        self.Calibration_Wavelength_Startwl_Spinbox.setKeyboardTracking(False)
+
+        self.Calibration_Wavelength_EndPixel_Prompt = QLabel("Pixel (Right)")
+        # self.Calibration_Wavelength_StartPixel_Prompt.setFixedSize(*LabelSize)
+        self.Calibration_Wavelength_EndPixel_Spinbox = QSpinBox()
+        self.Calibration_Wavelength_EndPixel_Spinbox.setValue(639)
+        self.Calibration_Wavelength_EndPixel_Spinbox.setKeyboardTracking(False)
+
+        self.Calibration_Wavelength_Endwl_Prompt = QLabel("λ")
+        # self.Calibration_Wavelength_Startwl_Prompt.setFixedSize(*LabelSize)
+        self.Calibration_Wavelength_Endwl_Spinbox = QSpinBox()
+        self.Calibration_Wavelength_Endwl_Spinbox.setRange(400, 2000)
+        self.Calibration_Wavelength_Endwl_Spinbox.setValue(1600)
+        self.Calibration_Wavelength_Endwl_Spinbox.setSuffix(" nm")
+        self.Calibration_Wavelength_Endwl_Spinbox.setKeyboardTracking(False)
+
+        self.Save_Button = QPushButton("Save HSI Cube")
+
+    def EventProcess(self):
+        asdf = 1
 
 
 if __name__ == '__main__':
