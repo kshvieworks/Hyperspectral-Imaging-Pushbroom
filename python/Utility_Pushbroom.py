@@ -136,7 +136,7 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
             if not (0 <= band_index < image_now.shape[1]):
                 raise IndexError(f"Band index {band_index} is outside spectral range 0 ~ {image_now.shape[1] -1}")
 
-            band_line = (image_now[:, band_index])
+            band_line = image_now[:, band_index].copy()
 
 
             # 7. Send latest frame

@@ -98,6 +98,7 @@ class HSIWindow(QWidget):
         self.cube = None
         self.live_band_image = None
         self.live_band_index = None
+        self.live_band_lines = 0
 
     # Define Layouts
         PageLayout = QHBoxLayout()
@@ -157,12 +158,17 @@ class HSIWindow(QWidget):
 
     @pyqtSlot()
     def Start_Acquisition(self):
+
         if self.camera_process is not None:
             QMessageBox.warning(self, "Acquisition", "Disconnect the camera preview first")
             return
         if self.stage_connected:
             QMessageBox.warning(self, 'Acquisition', 'Disconnect the stage manual control first')
             return
+
+        self.live_band_image = None
+        self.live_band_index = None
+        self.live_band_lines = 0
 
         camera_serial = self.Config.Serial_Entry.text().strip()
         stage_serial = self.Config.Stage_Serial_Entry.text().strip()
@@ -341,9 +347,10 @@ class HSIWindow(QWidget):
                         if band_line is not None:
                             if self.live_band_image is None:
                                 spatial_size = len(band_line)
-                                self.live_band_image = np.zeros((spatial_size, total), dtype = band_line)
+                                self.live_band_image = np.zeros((spatial_size, total), dtype = band_line.dtype)
                                 self.live_band_index = band_index
                             self.live_band_image[:, index] = band_line
+                            self.__Update_Preview()
 
                     elif status == "finished":
                         QMessageBox.information(self, "Acquisition Finished", f"Cube saved:\n{data['path']}")
@@ -740,7 +747,7 @@ class ImagePreviewWidgets(QWidget):
         self.Preview_Mode_Button.setChecked(True)
 
         self.PreviewLabel = Uqt.ClickableImageLabel()
-        self.PreviewLabel.setMinimumSize(512, 640)
+        self.PreviewLabel.setMinimumSize(640, 512)
         self.PreviewLabel.setScaledContents(False)
         self.PreviewLabel.setStyleSheet("border: 1px solid gray;")
 
