@@ -72,7 +72,7 @@ def build_scan_positions(start_mm, end_mm, step_mm):
     positions = (start_mm + np.arange(n_steps) * step_mm)
     return positions
 
-def acquisition_process_main(camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, output_path, frame_queue, status_queue, stop_event):
+def acquisition_process_main(camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, band_index, output_path, frame_queue, status_queue, stop_event):
     camera = None
     stage = None
     cube = None
@@ -132,11 +132,19 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
             cube[i, :, :] = image_now
             acquired_lines += 1
 
+            # 6-1. Band Representation
+            if not (0 <= band_index < image_now.shape[1]):
+                raise IndexError(f"Band index {band_index} is outside spectral range 0 ~ {image_now.shape[1] -1}")
+
+            band_line = (image_now[:, band_index])
+
+
             # 7. Send latest frame
             put_latest(frame_queue, image_now)
 
             # 8. Status
-            status_queue.put(("progress", {"index": i+1, "total": n_lines, "position": np.round(position_mm, 3),}))
+            status_queue.put(("progress", {"index": i+1, "total": n_lines, "position": np.round(position_mm, 3),
+                                           "band_index": int(band_index), "band_line": band_line}))
 
         # --------------
         # Finished / Aborted

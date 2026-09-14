@@ -32,7 +32,7 @@ VELOCITY_SCALE = 65_961_984
 ACCELERATION_SCALE = 13_584.249
 
 WAVELENGTH_START_NM = 900.0
-WAVELENGTH_END_NM = 1700.0
+WAVELENGTH_END_NM = 1600.0
 
 
 class App(QMainWindow):
@@ -96,6 +96,8 @@ class HSIWindow(QWidget):
 
     # Define Cube
         self.cube = None
+        self.live_band_image = None
+        self.live_band_index = None
 
     # Define Layouts
         PageLayout = QHBoxLayout()
@@ -138,6 +140,7 @@ class HSIWindow(QWidget):
         self.Config.camera_disconnect_requested.connect(self.Disconnect_Camera)
         self.Config.SpectrumY_Spinbox.valueChanged.connect(self.__Spectrum_Position_Changed)
         self.ImagePreview.spectrum_position_selected.connect(self.Config.SpectrumY_Spinbox.setValue)
+        self.ImagePreview.Preview_Mode_Button.toggled.connect(lambda: self.__Update_Preview())
         self.Config.stage_connect_requested.connect(self.stage_worker.connect_stage)
         self.Config.stage_disconnect_requested.connect(self.stage_worker.disconnect_stage)
 
@@ -170,12 +173,15 @@ class HSIWindow(QWidget):
         end_mm = self.Config.Stage_End_Spinbox.value()
         step_mm = self.Config.Stage_Steps_Spinbox.value()
 
+        band_index = self.Config.SpectrumY_Spinbox.value()
+
+
         settle_s = 1
 
         output_path = os.path.join(os.getcwd(), "test_cube.npy")
 
         self._Start_Acquisition_Process(camera_serial = camera_serial, stage_serial = stage_serial, exposure = exposure, temperature = temperature, stage_speed = stage_speed,
-                                        start_mm = start_mm, end_mm = end_mm, step_mm = step_mm, settle_s = settle_s, output_path = output_path)
+                                        start_mm = start_mm, end_mm = end_mm, step_mm = step_mm, settle_s = settle_s, band_index = band_index, output_path = output_path)
 
     def Connect_Camera(self, serial):
         if (self.camera_process is not None and self.camera_process.is_alive()):
@@ -203,7 +209,7 @@ class HSIWindow(QWidget):
     def Camera_Error(self, message):
         QMessageBox.critical(self, "Camera Error", f"{message}")
 
-    def _Start_Acquisition_Process(self, camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, output_path):
+    def _Start_Acquisition_Process(self, camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, band_index, output_path):
         if (self.acquisition_process is not None and self.acquisition_process.is_alive()):
             return
 
@@ -212,7 +218,7 @@ class HSIWindow(QWidget):
         self.acquisition_status_queue = ctx.Queue()
         self.acquisition_stop_event = ctx.Event()
         self.acquisition_process = ctx.Process(target = UP.acquisition_process_main,
-                                               args = (camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, output_path,
+                                               args = (camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, band_index, output_path,
                                                        self.acquisition_frame_queue, self.acquisition_status_queue, self.acquisition_stop_event))
         self.Config.Start_Acquisition_Button.setEnabled(False)
         self.Config.Start_Acquisition_Button.setText("Acquisition...")
@@ -281,6 +287,19 @@ class HSIWindow(QWidget):
         self.Config.Start_Acquisition_Button.setEnabled(True)
         self.Config.Start_Acquisition_Button.setText("Start Cube Acquisition")
 
+    def __Update_Preview(self):
+        show_frame = self.ImagePreview.Preview_Mode_Button.isChecked()
+        if show_frame:
+            if self.latest_camera_image is None:
+                return
+            image = self.latest_camera_image
+
+        else:
+            if self.live_band_image is None:
+                return
+            image = self.live_band_image[:, :self.live_band_lines]
+        self.ImagePreview.Update_Preview(image)
+
     def __Update_Acquisition_Frame(self):
         if self.acquisition_frame_queue is None:
             return
@@ -295,11 +314,9 @@ class HSIWindow(QWidget):
             return
 
         self.latest_camera_image = latest_image
-
         self.__Update_Spectrum_Range(latest_image)
-
-        self.ImagePreview.Update_Preview(latest_image)
-
+        self.__Update_Preview()
+        # self.ImagePreview.Update_Preview(latest_image)
         self.__Update_Spectrum()
 
     @pyqtSlot()
@@ -313,11 +330,21 @@ class HSIWindow(QWidget):
                         total = data["lines"]
                         self.Config.Start_Acquisition_Button.setText(f"Acquiring 0 / {total}")
                     elif status == "progress":
-                        index = data["index"]
+                        index = data["index"] - 1
                         total = data["total"]
                         position = data["position"]
                         self.Config.Start_Acquisition_Button.setText(f"Acquiring {index} / {total}")
                         self.Config.Stage_Position.setText(f"{position:3f} mm")
+                        band_index = data.get("band_index")
+                        band_line = data.get("band_line")
+                        self.live_band_lines = index + 1
+                        if band_line is not None:
+                            if self.live_band_image is None:
+                                spatial_size = len(band_line)
+                                self.live_band_image = np.zeros((spatial_size, total), dtype = band_line)
+                                self.live_band_index = band_index
+                            self.live_band_image[:, index] = band_line
+
                     elif status == "finished":
                         QMessageBox.information(self, "Acquisition Finished", f"Cube saved:\n{data['path']}")
                     elif status == "aborted":
@@ -366,11 +393,9 @@ class HSIWindow(QWidget):
             return
 
         self.latest_camera_image = latest_image
-
         self.__Update_Spectrum_Range(latest_image)
-
-        self.ImagePreview.Update_Preview(latest_image)
-
+        self.__Update_Preview()
+        # self.ImagePreview.Update_Preview(latest_image)
         self.__Update_Spectrum()
 
     @pyqtSlot()
@@ -694,7 +719,6 @@ class ImagePreviewWidgets(QWidget):
         self.initUI(Layout)
         self.setLayout(Layout)
 
-
     def initUI(self, Layout):
 
         self.UI_Component()
@@ -703,11 +727,17 @@ class ImagePreviewWidgets(QWidget):
 
     def UI_Layout(self, Layout):
 
+        Layout.addWidget(self.Preview_Mode_Button, alignment = Qt.AlignmentFlag.AlignRight)
+
         self.PreviewLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
         Layout.addWidget(self.PreviewLabel)
         Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.CRange_L_Spinbox, self.ColorRange_Slider, self.CRange_R_Spinbox), 'Horizontal'))
 
     def UI_Component(self):
+
+        self.Preview_Mode_Button = QPushButton("Camera Preview Mode")
+        self.Preview_Mode_Button.setCheckable(True)
+        self.Preview_Mode_Button.setChecked(True)
 
         self.PreviewLabel = Uqt.ClickableImageLabel()
         self.PreviewLabel.setMinimumSize(512, 640)
@@ -720,7 +750,6 @@ class ImagePreviewWidgets(QWidget):
         self.ColorRange_Slider.setValue((0, 2**16-1))
         self.ColorRange_Slider.setSingleStep(1)
 
-
         self.CRange_L_Spinbox = QSpinBox()
         self.CRange_L_Spinbox.setRange(0, 65535)
         self.CRange_L_Spinbox.setValue(0)
@@ -732,8 +761,8 @@ class ImagePreviewWidgets(QWidget):
         self.CRange_R_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(self.ColorRange_Slider.value()[0], value, self.ColorRange_Slider))
         self.ColorRange_Slider.valueChanged.connect(lambda values: Uqt.SliderHelper.RangeSliderChanged(self.CRange_L_Spinbox, self.CRange_R_Spinbox, values))
 
-
     def EventProcess(self):
+        self.Preview_Mode_Button.toggled.connect(self._Preview_Mode_Event)
         self.ColorRange_Slider.valueChanged.connect(self.Update_Display)
         self.PreviewLabel.pixel_clicked.connect(self.__Image_Clicked)
 
@@ -753,6 +782,12 @@ class ImagePreviewWidgets(QWidget):
         pixmap = Uqt.CustomFunction.cv2qt(self.current_image, vmin, vmax)
         if pixmap:
             self.PreviewLabel.setPixmap(pixmap)
+
+    def _Preview_Mode_Event(self, checked):
+        if checked:
+            self.Preview_Mode_Button.setText("Camera Preview Mode")
+        else:
+            self.Preview_Mode_Button.setText("Cube Image Mode")
 
     def __Image_Clicked(self, x, y):
         self.spectrum_position_selected.emit(y)
