@@ -163,7 +163,6 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
             except Exception:
                 pass
 
-
         if camera is not None:
             try:
                 camera.Stop_Acquisition()
@@ -174,6 +173,15 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
                 camera.close()
             except Exception:
                 pass
+
+def metadata_to_dict(metadata, image):
+    data = {"frame_id": None, "timestamp": None, "image_shape": image.shape}
+    if metadata is None:
+        return data
+
+    data["frame_id"] = getattr(metadata, "counter", None)
+    return data
+
 
 class StageWorker(QObject):
     connected = pyqtSignal(float)

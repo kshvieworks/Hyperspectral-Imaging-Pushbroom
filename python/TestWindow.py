@@ -804,25 +804,24 @@ class StatusWidgets(QWidget):
     def UI_Layout(self, Layout):
 
         Temp_Layout = QVBoxLayout()
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Status_Camera_Prompt), 'Horizontal'))
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Status_SensorTemp_Prompt), 'Horizontal'))
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Status_AcquiredFrames_Prompt), 'Horizontal'))
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Status_FPS_Prompt), 'Horizontal'))
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Status_CPU_Prompt), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Status_Camera_Prompt, self.Status_Camera_Value), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Status_SensorTemp_Prompt, self.Status_SensorTemp_Value), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Status_AcquiredFrames_Prompt, self.Status_AcquiredFrames_Value), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Status_FPS_Prompt, self.Status_FPS_Value), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Status_CPU_Prompt, self.Status_CPU_Value), 'Horizontal'))
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Acquisition Status')
 
         Temp_Layout = QVBoxLayout()
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_FrameID_Prompt), 'Horizontal'))
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_TimeStamp_Prompt), 'Horizontal'))
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_ExposureTime_Prompt), 'Horizontal'))
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_SensorTemp_Prompt), 'Horizontal'))
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_ImageSize_Prompt), 'Horizontal'))
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_Gain_Prompt), 'Horizontal'))
-        row1.
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_FrameID_Prompt, self.Meta_FrameID_Value), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_TimeStamp_Prompt, self.Meta_TimeStamp_Value), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_ExposureTime_Prompt, self.Meta_ExposureTime_Value), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_SensorTemp_Prompt, self.Meta_SensorTemp_Value), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_ImageSize_Prompt, self.Meta_ImageSize_Value), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Meta_Gain_Prompt, self.Meta_Gain_Value), 'Horizontal'))
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Metadata (Last Frame)')
 
         Temp_Layout = QVBoxLayout()
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Calibration_Wavelength_Prompt), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Calibration_Wavelength_Prompt, self.Calibration_Wavelength_Value), 'Horizontal'))
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Calibration_Wavelength_StartPixel_Prompt, self.Calibration_Wavelength_StartPixel_Spinbox,
                                                              self.Calibration_Wavelength_Startwl_Prompt, self.Calibration_Wavelength_Startwl_Spinbox), 'Horizontal'))
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Calibration_Wavelength_EndPixel_Prompt, self.Calibration_Wavelength_EndPixel_Spinbox,
@@ -844,41 +843,54 @@ class StatusWidgets(QWidget):
     # UI for Camera Settings
         self.Status_Camera_Prompt = QLabel("Status")
         self.Status_Camera_Prompt.setFixedSize(*LabelSize)
+        self.Status_Camera_Value = QLabel("--")
 
         self.Status_SensorTemp_Prompt = QLabel("Sensor Temperature")
         self.Status_SensorTemp_Prompt.setFixedSize(*LabelSize)
+        self.Status_SensorTemp_Value = QLabel("-- °C")
 
         self.Status_AcquiredFrames_Prompt = QLabel("Frames Acquired")
         self.Status_AcquiredFrames_Prompt.setFixedSize(*LabelSize)
+        self.Status_AcquiredFrames_Value = QLabel("--")
 
         self.Status_FPS_Prompt = QLabel("FPS")
         self.Status_FPS_Prompt.setFixedSize(*LabelSize)
+        self.Status_FPS_Value = QLabel("--")
 
         self.Status_CPU_Prompt = QLabel("CPU Usage")
         self.Status_CPU_Prompt.setFixedSize(*LabelSize)
+        self.Status_CPU_Value = QLabel("--")
 
         self.Meta_FrameID_Prompt = QLabel("Frame ID")
         self.Meta_FrameID_Prompt.setFixedSize(*LabelSize)
+        self.Meta_FrameID_Value = QLabel("--")
 
         self.Meta_TimeStamp_Prompt = QLabel("Time Stamp")
         self.Meta_TimeStamp_Prompt.setFixedSize(*LabelSize)
+        self.Meta_TimeStamp_Value = QLabel("--")
 
         self.Meta_ExposureTime_Prompt = QLabel("Exposure Time")
         self.Meta_ExposureTime_Prompt.setFixedSize(*LabelSize)
+        self.Meta_ExposureTime_Value = QLabel("--")
 
         self.Meta_SensorTemp_Prompt = QLabel("Sensor Temperature")
         self.Meta_SensorTemp_Prompt.setFixedSize(*LabelSize)
+        self.Meta_SensorTemp_Value = QLabel("--")
 
         self.Meta_ImageSize_Prompt = QLabel("Image Size")
         self.Meta_ImageSize_Prompt.setFixedSize(*LabelSize)
+        self.Meta_ImageSize_Value = QLabel("--")
 
         self.Meta_Gain_Prompt = QLabel("Analog Gain")
         self.Meta_Gain_Prompt.setFixedSize(*LabelSize)
+        self.Meta_Gain_Value = QLabel("--")
 
         self.Calibration_Wavelength_Prompt = QLabel("Wavelength Range")
         self.Calibration_Wavelength_Prompt.setFixedSize(*LabelSize)
+        self.Calibration_Wavelength_Value = QLabel("--")
 
-        self.Calibration_Wavelength_StartPixel_Prompt = QLabel("Pixel (Left)")
+
+        self.Calibration_Wavelength_StartPixel_Prompt = QLabel("Pixel (Left)  ")
         # self.Calibration_Wavelength_StartPixel_Prompt.setFixedSize(*LabelSize)
         self.Calibration_Wavelength_StartPixel_Spinbox = QSpinBox()
         self.Calibration_Wavelength_StartPixel_Spinbox.setValue(0)
