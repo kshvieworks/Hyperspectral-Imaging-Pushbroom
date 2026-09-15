@@ -348,7 +348,7 @@ class HSIWindow(QWidget):
                                 spatial_size = len(band_line)
                                 self.live_band_image = np.zeros((spatial_size, total), dtype = band_line.dtype)
                                 self.live_band_index = band_index
-                            self.live_band_image[:, index] = band_line
+                            self.live_band_image[:, index] = np.mean(band_line, axis = -1)
                             self.__Update_Preview()
 
                     elif status == "finished":
