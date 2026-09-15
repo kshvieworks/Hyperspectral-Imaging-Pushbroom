@@ -318,7 +318,7 @@ class HSIWindow(QWidget):
         band_right = self.Status.Band1_R_Spinbox.value()
         band_left = int(np.clip(band_left, 0, spectral_size - 1))
         band_right = int(np.clip(band_right, band_left, spectral_size - 1))
-        selected = data[:, band_left:band_right+1]
+        selected = data[..., band_left:band_right+1]
         return (selected, (band_left, band_right))
 
     def __Update_Acquisition_Frame(self):
