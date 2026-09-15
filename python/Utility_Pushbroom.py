@@ -133,7 +133,7 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
             acquired_lines += 1
 
             # 6-1. Band Representation
-            if not (0 <= (band_index[0] and band_index[1]) < image_now.shape[1]):
+            if not (0 <= band_index[0] <= band_index[1] < image_now.shape[1]):
                 raise IndexError(f"Band index {band_index} is outside spectral range 0 ~ {image_now.shape[1] -1}")
 
             band_line = image_now[:, band_index[0]:band_index[1]+1].copy()

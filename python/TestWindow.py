@@ -150,6 +150,8 @@ class HSIWindow(QWidget):
         self.Config.stage_speed_requested.connect(self.stage_worker.set_speed)
         self.Config.start_acquisition_requested.connect(self.Start_Acquisition)
 
+        self.Status.Band1_Slider.valueChanged.connect(self.__Band_Range_Changed)
+
         self.stage_worker.connected.connect(self.__Stage_Connected)
         self.stage_worker.position_updated.connect(self.__Update_Stage_Position)
         self.stage_worker.motion_finished.connect(self.__Update_Stage_Position)
@@ -299,6 +301,13 @@ class HSIWindow(QWidget):
                 return
             image = self.latest_camera_image
 
+            band_left = self.Status.Band1_L_Spinbox.value()
+            band_right = self.Status.Band1_R_Spinbox.value()
+            spectral_size = image.shape[-1]
+            band_left = np.clip(band_left, 0, spectral_size - 1)
+            band_right = np.clip(band_right, band_left, spectral_size - 1)
+            image = image[:, band_left:band_right+1]
+
         else:
             if self.live_band_image is None:
                 return
@@ -352,7 +361,12 @@ class HSIWindow(QWidget):
                             self.__Update_Preview()
 
                     elif status == "finished":
-                        QMessageBox.information(self, "Acquisition Finished", f"Cube saved:\n{data['path']}")
+                        cube_path = data["path"]
+                        self.cube = np.load(cube_path, mmap_mode = "r")
+                        self.live_band_lines = self.cube.shape[0]
+                        self.__Update_Band_Image()
+                        QMessageBox.information(self, "Acquisition Finished", f"Cube saved:\n{cube_path}")
+
                     elif status == "aborted":
                         QMessageBox.warning(self, "Acquisition Aborted", f"Acquired lines: {data['lines']}")
                     elif status == "error":
@@ -452,6 +466,30 @@ class HSIWindow(QWidget):
         if (self.Config.SpectrumY_Spinbox.maximum() != spatial_max):
             self.Config.SpectrumY_Spinbox.setMaximum(spatial_max)
             self.Config.SpectrumY_Slider.setMaximum(spatial_max)
+
+    def __Update_Band_Image(self):
+        if self.cube is None:
+            return
+        band_left = self.Status.Band1_L_Spinbox.value()
+        band_right = self.Status.Band1_R_Spinbox.value()
+        spectral_size = self.cube.shape[-1]
+        band_left = np.clip(band_left, 0, spectral_size - 1)
+        band_right = np.clip(band_right, band_left, spectral_size - 1)
+        band_cube = self.cube[:, :, band_left:band_right+1]
+        band_image = np.mean(band_cube, axis=-1, dtype=np.uint16)
+        self.live_band_image = band_image.T
+        self.live_band_index = (int(band_left), int(band_right))
+        self.live_band_lines = self.cube.shape[0]
+        if not (self.ImagePreview.Preview_Mode_Button.isChecked()):
+            self.__Update_Preview()
+
+    @pyqtSlot()
+    def __Band_Range_Changed(self):
+        if self.ImagePreview.Preview_Mode_Button.isChecked():
+            self.__Update_Preview()
+        else:
+            if self.cube is not None:
+                self.__Update_Band_Image()
 
     # @pyqtSlot(object)
     # def __Receive_Camera_Image(self, image):
