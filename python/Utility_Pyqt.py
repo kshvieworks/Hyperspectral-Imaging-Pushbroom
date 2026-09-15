@@ -238,6 +238,9 @@ class ClickableImageLabel(QLabel):
         self.image_shape = shape
 
     def mousePressEvent(self, event):
+
+        alignment = self.alignment()
+
         pixmap = self.pixmap()
         if (pixmap is None or self.image_shape is None):
             return
@@ -248,8 +251,19 @@ class ClickableImageLabel(QLabel):
         pix_w = pixmap.width()
         pix_h = pixmap.height()
 
-        x_offset = (label_w - pix_w) / 2
-        y_offset = (label_h - pix_h) / 2
+        if alignment & QtCore.Qt.AlignmentFlag.AlignLeft:
+            x_offset = 0
+        elif alignment & QtCore.Qt.AlignmentFlag.AlignRight:
+            x_offset = label_w - pix_w
+        else:
+            x_offset = (label_w - pix_w) / 2
+
+        if alignment & QtCore.Qt.AlignmentFlag.AlignTop:
+            y_offset = 0
+        elif alignment & QtCore.Qt.AlignmentFlag.AlignBottom:
+            y_offset = label_h - pix_h
+        else:
+            y_offset = (label_h - pix_h) / 2
 
         x = event.position().x() - x_offset
         y = event.position().y() - y_offset

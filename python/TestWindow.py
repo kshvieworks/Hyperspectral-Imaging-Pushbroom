@@ -299,20 +299,27 @@ class HSIWindow(QWidget):
         if show_frame:
             if self.latest_camera_image is None:
                 return
-            image = self.latest_camera_image
-
-            band_left = self.Status.Band1_L_Spinbox.value()
-            band_right = self.Status.Band1_R_Spinbox.value()
-            spectral_size = image.shape[-1]
-            band_left = np.clip(band_left, 0, spectral_size - 1)
-            band_right = np.clip(band_right, band_left, spectral_size - 1)
-            image = image[:, band_left:band_right+1]
+            image, _ = self.__Select_Band_Range(self.latest_camera_image)
+            align_left = False
 
         else:
             if self.live_band_image is None:
                 return
             image = self.live_band_image[:, :self.live_band_lines]
-        self.ImagePreview.Update_Preview(image)
+            align_left = True
+
+        self.ImagePreview.Update_Preview(image, align_left = align_left)
+
+    def __Select_Band_Range(self, data):
+        if data is None:
+            return None, None
+        spectral_size = data.shape[-1]
+        band_left = self.Status.Band1_L_Spinbox.value()
+        band_right = self.Status.Band1_R_Spinbox.value()
+        band_left = int(np.clip(band_left, 0, spectral_size - 1))
+        band_right = int(np.clip(band_right, band_left, spectral_size - 1))
+        selected = data[:, band_left:band_right+1]
+        return (selected, (band_left, band_right))
 
     def __Update_Acquisition_Frame(self):
         if self.acquisition_frame_queue is None:
@@ -470,15 +477,14 @@ class HSIWindow(QWidget):
     def __Update_Band_Image(self):
         if self.cube is None:
             return
-        band_left = self.Status.Band1_L_Spinbox.value()
-        band_right = self.Status.Band1_R_Spinbox.value()
-        spectral_size = self.cube.shape[-1]
-        band_left = np.clip(band_left, 0, spectral_size - 1)
-        band_right = np.clip(band_right, band_left, spectral_size - 1)
-        band_cube = self.cube[:, :, band_left:band_right+1]
+
+        band_cube, band_range = self.__Select_Band_Range(self.cube)
+        if band_cube is None:
+            return
+
         band_image = np.mean(band_cube, axis=-1, dtype=np.float32)
         self.live_band_image = np.ascontiguousarray(band_image.T)
-        self.live_band_index = (int(band_left), int(band_right))
+        self.live_band_index = band_range
         self.live_band_lines = self.cube.shape[0]
         if not (self.ImagePreview.Preview_Mode_Button.isChecked()):
             self.__Update_Preview()
@@ -810,13 +816,18 @@ class ImagePreviewWidgets(QWidget):
         self.ColorRange_Slider.valueChanged.connect(lambda values: Uqt.SliderHelper.RangeSliderChanged(self.CRange_L_Spinbox, self.CRange_R_Spinbox, values))
 
 
-    def Update_Preview(self, Image):
+    def Update_Preview(self, Image, align_left=False):
 
         if Image is None or Image.size == 0:
             return
 
         self.current_image = Image
         self.PreviewLabel.set_image_shape(Image.shape)
+        if align_left:
+            self.PreviewLabel.setAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+        else:
+            self.PreviewLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
         self.Update_Display()
 
     def Update_Display(self):
