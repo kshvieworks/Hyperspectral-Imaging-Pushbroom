@@ -26,7 +26,7 @@ class Controller:
         self.stage.move_by(float(distance_mm))
 
     def home(self):
-        self.stage.home(force=True)
+        self.stage.home(force=True, sync=False)
         # self.stage.wait_move()
 
     def set_speed(self, speed_mm_s):
@@ -40,6 +40,9 @@ class Controller:
 
     def is_moving(self):
         return self.stage.is_moving()
+
+    def is_homing(self):
+        return self.stage.is_homing()
 
 
 # SERIAL = "49402484"

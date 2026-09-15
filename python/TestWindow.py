@@ -476,8 +476,8 @@ class HSIWindow(QWidget):
         band_left = np.clip(band_left, 0, spectral_size - 1)
         band_right = np.clip(band_right, band_left, spectral_size - 1)
         band_cube = self.cube[:, :, band_left:band_right+1]
-        band_image = np.mean(band_cube, axis=-1, dtype=np.uint16)
-        self.live_band_image = band_image.T
+        band_image = np.mean(band_cube, axis=-1, dtype=np.float32)
+        self.live_band_image = np.ascontiguousarray(band_image.T)
         self.live_band_index = (int(band_left), int(band_right))
         self.live_band_lines = self.cube.shape[0]
         if not (self.ImagePreview.Preview_Mode_Button.isChecked()):
@@ -908,6 +908,7 @@ class StatusWidgets(QWidget):
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Calibration')
 
         Temp_Layout = QVBoxLayout()
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Band1_Prompt, self.Band1_Weight), 'Horizontal'))
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Band1_L_Spinbox, self.Band1_Slider, self.Band1_R_Spinbox), 'Horizontal'))
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Save_Button), 'Horizontal'))
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Post Processing')

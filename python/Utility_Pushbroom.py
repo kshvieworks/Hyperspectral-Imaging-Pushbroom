@@ -294,26 +294,14 @@ class StageWorker(QObject):
         try:
             position = self.stage.position()
             self.position_updated.emit(position)
-            if not self.stage.is_moving():
+            is_active = (self.stage.is_moving() or self.stage.is_homing())
+
+            if not is_active:
                 self.motion_timer.stop()
                 self.motion_finished.emit(position)
 
         except Exception as e:
             self.motion_timer.stop()
             self.error.emit(f"{type(e).__name__}: {e}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 

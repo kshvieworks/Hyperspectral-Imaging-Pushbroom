@@ -80,6 +80,7 @@ class CustomFunction:
 
         # 1. Adjust and Normalize to Target bit depth
         display_image = CustomFunction.Normalize_Image(cvimage, vmin, vmax)
+        display_image = np.ascontiguousarray(display_image, dtype=np.uint8)
         # 2. Resize
         # cvimage_bit = cv2.resize(cvimage_bit, dsize=(0, 0), fx=0.5, fy=0.5, interpolation=cv2.INTER_AREA)
 
