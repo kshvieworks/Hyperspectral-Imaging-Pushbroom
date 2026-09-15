@@ -2,8 +2,9 @@ import numpy as np
 import imageio
 from PyQt6 import QtGui
 from PyQt6 import QtWidgets
-from PyQt6.QtWidgets import QApplication, QFileDialog, QLabel
+from PyQt6.QtWidgets import QApplication, QFileDialog, QLabel, QSpinBox
 from PyQt6 import QtCore
+from PyQt6.QtCore import Qt
 
 import cv2
 import os
@@ -191,6 +192,20 @@ class EventHelper:
                 imageio.imwrite(fname, d.astype(filedtype))
 
 class SliderHelper:
+
+    @staticmethod
+    def _init_range_slider(Slider, Spin_L, Spin_R, Value_L, Value_R, step = 1):
+        Slider.setOrientation(Qt.Orientation.Horizontal)
+        Slider.setRange(Value_L, Value_R)
+        Slider.setValue((Value_L, Value_R))
+        Slider.setSingleStep(step)
+
+        Spin_L.setRange(Value_L, Value_R)
+        Spin_L.setValue(Value_L)
+
+        Spin_R.setRange(Value_L, Value_R)
+        Spin_R.setValue(Value_R)
+
 
     @staticmethod
     def RangeSpinChanged(Spin_Left, Spin_Right, Slider):

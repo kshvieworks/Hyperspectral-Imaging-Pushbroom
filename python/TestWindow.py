@@ -65,7 +65,7 @@ class HSIWindow(QWidget):
         self.latest_camera_image = None
         self.camera_image_flag = False
         self.preview_timer = QTimer(self)
-        self.preview_timer.setInterval(5)
+        self.preview_timer.setInterval(20)
         self.preview_timer.timeout.connect(self.__Update_Camera_Preview)
 
     # Process Timer
@@ -179,10 +179,9 @@ class HSIWindow(QWidget):
         end_mm = self.Config.Stage_End_Spinbox.value()
         step_mm = self.Config.Stage_Steps_Spinbox.value()
 
-        band_index = self.Config.SpectrumY_Spinbox.value()
+        band_index = (self.Status.Band1_L_Spinbox.value(), self.Status.Band1_R_Spinbox.value())
 
-
-        settle_s = 1
+        settle_s = 0.1
 
         output_path = os.path.join(os.getcwd(), "test_cube.npy")
 
@@ -764,14 +763,14 @@ class ImagePreviewWidgets(QWidget):
         self.CRange_R_Spinbox.setRange(0, 65535)
         self.CRange_R_Spinbox.setValue(65535)
 
-        self.CRange_L_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(value, self.ColorRange_Slider.value()[1], self.ColorRange_Slider))
-        self.CRange_R_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(self.ColorRange_Slider.value()[0], value, self.ColorRange_Slider))
-        self.ColorRange_Slider.valueChanged.connect(lambda values: Uqt.SliderHelper.RangeSliderChanged(self.CRange_L_Spinbox, self.CRange_R_Spinbox, values))
-
     def EventProcess(self):
         self.Preview_Mode_Button.toggled.connect(self._Preview_Mode_Event)
         self.ColorRange_Slider.valueChanged.connect(self.Update_Display)
         self.PreviewLabel.pixel_clicked.connect(self.__Image_Clicked)
+        self.CRange_L_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(value, self.ColorRange_Slider.value()[1], self.ColorRange_Slider))
+        self.CRange_R_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(self.ColorRange_Slider.value()[0], value, self.ColorRange_Slider))
+        self.ColorRange_Slider.valueChanged.connect(lambda values: Uqt.SliderHelper.RangeSliderChanged(self.CRange_L_Spinbox, self.CRange_R_Spinbox, values))
+
 
     def Update_Preview(self, Image):
 
@@ -871,6 +870,7 @@ class StatusWidgets(QWidget):
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Calibration')
 
         Temp_Layout = QVBoxLayout()
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Band1_L_Spinbox, self.Band1_Slider, self.Band1_R_Spinbox), 'Horizontal'))
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Save_Button), 'Horizontal'))
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Post Processing')
 
@@ -931,10 +931,10 @@ class StatusWidgets(QWidget):
         self.Calibration_Wavelength_Prompt.setFixedSize(*LabelSize)
         self.Calibration_Wavelength_Value = QLabel("--")
 
-
         self.Calibration_Wavelength_StartPixel_Prompt = QLabel("Pixel (Left)  ")
         # self.Calibration_Wavelength_StartPixel_Prompt.setFixedSize(*LabelSize)
         self.Calibration_Wavelength_StartPixel_Spinbox = QSpinBox()
+        self.Calibration_Wavelength_StartPixel_Spinbox.setRange(0, 639)
         self.Calibration_Wavelength_StartPixel_Spinbox.setValue(0)
         self.Calibration_Wavelength_StartPixel_Spinbox.setKeyboardTracking(False)
 
@@ -949,6 +949,7 @@ class StatusWidgets(QWidget):
         self.Calibration_Wavelength_EndPixel_Prompt = QLabel("Pixel (Right)")
         # self.Calibration_Wavelength_StartPixel_Prompt.setFixedSize(*LabelSize)
         self.Calibration_Wavelength_EndPixel_Spinbox = QSpinBox()
+        self.Calibration_Wavelength_EndPixel_Spinbox.setRange(0, 639)
         self.Calibration_Wavelength_EndPixel_Spinbox.setValue(639)
         self.Calibration_Wavelength_EndPixel_Spinbox.setKeyboardTracking(False)
 
@@ -960,10 +961,25 @@ class StatusWidgets(QWidget):
         self.Calibration_Wavelength_Endwl_Spinbox.setSuffix(" nm")
         self.Calibration_Wavelength_Endwl_Spinbox.setKeyboardTracking(False)
 
+        self.Band1_Prompt = QLabel("Band 1")
+        self.Band1_Prompt.setFixedSize(*LabelSize)
+        self.Band1_Weight = QSpinBox()
+        self.Band1_Weight.setRange(0, 1)
+        self.Band1_Weight.setValue(1)
+        self.Band1_Weight.setKeyboardTracking(False)
+
+        self.Band1_Slider = QRangeSlider()
+        self.Band1_L_Spinbox = QSpinBox()
+        self.Band1_R_Spinbox = QSpinBox()
+
+        Uqt.SliderHelper._init_range_slider(self.Band1_Slider, self.Band1_L_Spinbox, self.Band1_R_Spinbox, 0, 639, 1)
+
         self.Save_Button = QPushButton("Save HSI Cube")
 
     def EventProcess(self):
-        asdf = 1
+        self.Band1_L_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(value, self.Band1_Slider.value()[1], self.Band1_Slider))
+        self.Band1_R_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(self.Band1_Slider.value()[0], value, self.Band1_Slider))
+        self.Band1_Slider.valueChanged.connect(lambda values: Uqt.SliderHelper.RangeSliderChanged(self.Band1_L_Spinbox, self.Band1_R_Spinbox, values))
 
 
 if __name__ == '__main__':

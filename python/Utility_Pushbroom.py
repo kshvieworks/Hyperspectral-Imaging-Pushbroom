@@ -133,10 +133,10 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
             acquired_lines += 1
 
             # 6-1. Band Representation
-            if not (0 <= band_index < image_now.shape[1]):
+            if not (0 <= (band_index[0] and band_index[1]) < image_now.shape[1]):
                 raise IndexError(f"Band index {band_index} is outside spectral range 0 ~ {image_now.shape[1] -1}")
 
-            band_line = image_now[:, band_index].copy()
+            band_line = image_now[:, band_index[0]:band_index[1]+1].copy()
 
 
             # 7. Send latest frame
@@ -144,7 +144,7 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
 
             # 8. Status
             status_queue.put(("progress", {"index": i+1, "total": n_lines, "position": np.round(position_mm, 3),
-                                           "band_index": int(band_index), "band_line": band_line}))
+                                           "band_index": (int(band_index[0]), int(band_index[1])), "band_line": band_line}))
 
         # --------------
         # Finished / Aborted
