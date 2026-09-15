@@ -65,7 +65,7 @@ class HSIWindow(QWidget):
         self.latest_camera_image = None
         self.camera_image_flag = False
         self.preview_timer = QTimer(self)
-        self.preview_timer.setInterval(20)
+        self.preview_timer.setInterval(100)
         self.preview_timer.timeout.connect(self.__Update_Camera_Preview)
 
     # Process Timer
