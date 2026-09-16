@@ -100,6 +100,9 @@ class HSIWindow(QWidget):
         self.live_band_index = None
         self.live_band_lines = 0
 
+    # Spectral Calibration
+        self.wavelength_range = None
+
     # Define Layouts
         PageLayout = QHBoxLayout()
         ConfigLayout = QVBoxLayout()
@@ -151,6 +154,10 @@ class HSIWindow(QWidget):
         self.Config.start_acquisition_requested.connect(self.Start_Acquisition)
 
         self.Status.Band1_Slider.valueChanged.connect(self.__Band_Range_Changed)
+        self.Status.Calibration_Wavelength_StartPixel_Spinbox.valueChanged.connect(self.__Update_Wavelength_Calibration)
+        self.Status.Calibration_Wavelength_EndPixel_Spinbox.valueChanged.connect(self.__Update_Wavelength_Calibration)
+        self.Status.Calibration_Wavelength_Startwl_Spinbox.valueChanged.connect(self.__Update_Wavelength_Calibration)
+        self.Status.Calibration_Wavelength_Endwl_Spinbox.valueChanged.connect(self.__Update_Wavelength_Calibration)
 
         self.stage_worker.connected.connect(self.__Stage_Connected)
         self.stage_worker.position_updated.connect(self.__Update_Stage_Position)
@@ -336,8 +343,6 @@ class HSIWindow(QWidget):
         preview[..., band_left:band_right+1] = selected
         return preview
 
-
-
     def __Update_Acquisition_Frame(self):
         if self.acquisition_frame_queue is None:
             return
@@ -372,7 +377,7 @@ class HSIWindow(QWidget):
                         total = data["total"]
                         position = data["position"]
                         self.Config.Start_Acquisition_Button.setText(f"Acquiring {index} / {total}")
-                        self.Config.Stage_Position.setText(f"{position:3f} mm")
+                        self.Config.Stage_Position.setText(f"{position:.3f} mm")
                         band_index = data.get("band_index")
                         band_line = data.get("band_line")
                         self.live_band_lines = index + 1
@@ -414,7 +419,7 @@ class HSIWindow(QWidget):
 
     @pyqtSlot(float)
     def __Update_Stage_Position(self, position):
-        self.Config.Stage_Position.setText(f"{position:3f} mm")
+        self.Config.Stage_Position.setText(f"{position:.3f} mm")
 
     @pyqtSlot(str)
     def __Stage_Error(self, message):
@@ -480,9 +485,14 @@ class HSIWindow(QWidget):
         position = np.clip(position, 0, spatial_size - 1)
         intensity = image[int(position), :].astype(np.float32)
 
-        wavelength = np.linspace(WAVELENGTH_START_NM, WAVELENGTH_END_NM, spectral_size)
-        self.SpectrumPreview.set_spectrum(wavelength, intensity)
+        if (self.wavelength_range is not None and len(self.wavelength_range) == spectral_size):
+            x_axis = self.wavelength_range
+            self.SpectrumPreview.set_x_axis_mode(True)
+        else:
+            x_axis = np.arange(spectral_size)
+            self.SpectrumPreview.set_x_axis_mode(False)
 
+        self.SpectrumPreview.set_spectrum(x_axis, intensity)
 
     def __Update_Spectrum_Range(self, image:np.ndarray):
         spatial_max = image.shape[0] - 1
@@ -513,6 +523,32 @@ class HSIWindow(QWidget):
         else:
             if self.cube is not None:
                 self.__Update_Band_Image()
+
+    def __Update_Wavelength_Calibration(self):
+        pixel_left = self.Status.Calibration_Wavelength_StartPixel_Spinbox.value()
+        pixel_right = self.Status.Calibration_Wavelength_EndPixel_Spinbox.value()
+        wavelength_left = self.Status.Calibration_Wavelength_Startwl_Spinbox.value()
+        wavelength_right = self.Status.Calibration_Wavelength_Endwl_Spinbox.value()
+
+        if pixel_right <= pixel_left:
+            self.wavelength_range = None
+            self.Status.Calibration_Wavelength_Value.setText("Invalid Pixel Range")
+            return
+
+        if self.latest_camera_image is not None:
+            spectral_size = self.latest_camera_image.shape[1]
+        elif self.cube is not None:
+            spectral_size = self.cube.shape[-1]
+        else:
+            spectral_size = self.Status.Calibration_Wavelength_EndPixel_Spinbox.maximum() + 1
+
+        slope = (wavelength_right - wavelength_left) / (pixel_right - pixel_left)
+
+        pixels = np.arange(spectral_size, dtype=np.float32)
+        self.wavelength_range = wavelength_left + (pixels - pixel_left) * slope
+        self.Status.Calibration_Wavelength_Value.setText(f"{self.wavelength_range[0]:.1f} - {self.wavelength_range[-1]:.1f} nm")
+        self.__Update_Spectrum()
+
 
     # @pyqtSlot(object)
     # def __Receive_Camera_Image(self, image):
@@ -891,6 +927,12 @@ class SpectrumPreviewWidgets(QWidget):
     def set_spectrum(self, wavelength, intensity):
         self.curve.setData(wavelength, intensity)
 
+    def set_x_axis_mode(self, calibrated):
+        if calibrated:
+            self.plot.setLabel("bottom", "Wavelength", units="nm")
+        else:
+            self.plot.setLabel("bottom", "Spectral Pixel")
+
 
 class StatusWidgets(QWidget):
     wavelength_range_selected = pyqtSignal(int)
@@ -1007,7 +1049,8 @@ class StatusWidgets(QWidget):
 
         self.Calibration_Wavelength_Startwl_Prompt = QLabel("λ")
         # self.Calibration_Wavelength_Startwl_Prompt.setFixedSize(*LabelSize)
-        self.Calibration_Wavelength_Startwl_Spinbox = QSpinBox()
+        self.Calibration_Wavelength_Startwl_Spinbox = QDoubleSpinBox()
+        self.Calibration_Wavelength_Startwl_Spinbox.setDecimals(1)
         self.Calibration_Wavelength_Startwl_Spinbox.setRange(400, 2000)
         self.Calibration_Wavelength_Startwl_Spinbox.setValue(900)
         self.Calibration_Wavelength_Startwl_Spinbox.setSuffix(" nm")
@@ -1022,7 +1065,8 @@ class StatusWidgets(QWidget):
 
         self.Calibration_Wavelength_Endwl_Prompt = QLabel("λ")
         # self.Calibration_Wavelength_Startwl_Prompt.setFixedSize(*LabelSize)
-        self.Calibration_Wavelength_Endwl_Spinbox = QSpinBox()
+        self.Calibration_Wavelength_Endwl_Spinbox = QDoubleSpinBox()
+        self.Calibration_Wavelength_Endwl_Spinbox.setDecimals(1)
         self.Calibration_Wavelength_Endwl_Spinbox.setRange(400, 2000)
         self.Calibration_Wavelength_Endwl_Spinbox.setValue(1600)
         self.Calibration_Wavelength_Endwl_Spinbox.setSuffix(" nm")
