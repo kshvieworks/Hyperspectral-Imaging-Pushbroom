@@ -13,7 +13,7 @@ from queue import Empty
 
 from PyQt6.QtCore import (Qt, QObject, pyqtSignal, pyqtSlot, QTimer, QThread)
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-                             QPushButton, QSlider,
+                             QPushButton, QSlider, QCheckBox,
                              QDoubleSpinBox, QComboBox, QSpinBox, QGroupBox, QFileDialog, QMessageBox, QLineEdit, QStyle)
 from superqt import QRangeSlider
 
@@ -21,6 +21,7 @@ import pyqtgraph as pg
 import Utility_Pyqt as Uqt
 # import CameraControl as CC
 import Utility_Pushbroom as UP
+import shutil
 
 from pylablib.devices import Thorlabs
 from pecamerapy import Camera
@@ -30,9 +31,6 @@ import cv2
 STEPS_PER_MM = 1_228_800
 VELOCITY_SCALE = 65_961_984
 ACCELERATION_SCALE = 13_584.249
-
-WAVELENGTH_START_NM = 900.0
-WAVELENGTH_END_NM = 1600.0
 
 
 class App(QMainWindow):
@@ -96,11 +94,13 @@ class HSIWindow(QWidget):
 
     # Define Cube
         self.cube = None
+        self.cube_path = None
         self.live_band_image = None
         self.live_band_index = None
         self.live_band_lines = 0
 
     # Spectral Calibration
+        self.calibration_enabled = False
         self.wavelength_range = None
 
     # Define Layouts
@@ -158,6 +158,11 @@ class HSIWindow(QWidget):
         self.Status.Calibration_Wavelength_EndPixel_Spinbox.valueChanged.connect(self.__Update_Wavelength_Calibration)
         self.Status.Calibration_Wavelength_Startwl_Spinbox.valueChanged.connect(self.__Update_Wavelength_Calibration)
         self.Status.Calibration_Wavelength_Endwl_Spinbox.valueChanged.connect(self.__Update_Wavelength_Calibration)
+        self.Status.Calibration_Enable_Checkbox.toggled.connect(self.__Calibration_Mode_Changed)
+        self.Status.Band1_Slider.valueChanged.connect(self.__Band_Slider_Changed)
+        self.Status.Band1_L_Spinbox.editingFinished.connect(self.__Band_Spinbox_Changed)
+        self.Status.Band1_R_Spinbox.editingFinished.connect(self.__Band_Spinbox_Changed)
+        self.Status.Save_Button.clicked.connect(self.__Save_HSI_Cube)
 
         self.stage_worker.connected.connect(self.__Stage_Connected)
         self.stage_worker.position_updated.connect(self.__Update_Stage_Position)
@@ -188,7 +193,7 @@ class HSIWindow(QWidget):
         end_mm = self.Config.Stage_End_Spinbox.value()
         step_mm = self.Config.Stage_Steps_Spinbox.value()
 
-        band_index = (self.Status.Band1_L_Spinbox.value(), self.Status.Band1_R_Spinbox.value())
+        band_index = tuple(int(v) for v in self.Status.Band1_Slider.value())
 
         settle_s = 0.1
 
@@ -322,10 +327,9 @@ class HSIWindow(QWidget):
         if data is None:
             return None, None
         spectral_size = data.shape[-1]
-        band_left = self.Status.Band1_L_Spinbox.value()
-        band_right = self.Status.Band1_R_Spinbox.value()
-        band_left = int(np.clip(band_left, 0, spectral_size - 1))
-        band_right = int(np.clip(band_right, band_left, spectral_size - 1))
+        band_left, band_right = self.Status.Band1_Slider.value()
+        band_left = int(band_left)
+        band_right = int(band_right)
         selected = data[..., band_left:band_right+1]
         return (selected, (band_left, band_right))
 
@@ -391,10 +395,12 @@ class HSIWindow(QWidget):
 
                     elif status == "finished":
                         cube_path = data["path"]
-                        self.cube = np.load(cube_path, mmap_mode = "r")
+                        self.cube_path = os.path.abspath(cube_path)
+                        self.cube = np.load(self.cube_path, mmap_mode = "r")
                         self.live_band_lines = self.cube.shape[0]
                         self.__Update_Band_Image()
                         QMessageBox.information(self, "Acquisition Finished", f"Cube saved:\n{cube_path}")
+                        self.Status.Save_Button.setEnabled(True)
 
                     elif status == "aborted":
                         QMessageBox.warning(self, "Acquisition Aborted", f"Acquired lines: {data['lines']}")
@@ -485,7 +491,7 @@ class HSIWindow(QWidget):
         position = np.clip(position, 0, spatial_size - 1)
         intensity = image[int(position), :].astype(np.float32)
 
-        if (self.wavelength_range is not None and len(self.wavelength_range) == spectral_size):
+        if (self.wavelength_range is not None and len(self.wavelength_range) == spectral_size and self.calibration_enabled):
             x_axis = self.wavelength_range
             self.SpectrumPreview.set_x_axis_mode(True)
         else:
@@ -524,6 +530,77 @@ class HSIWindow(QWidget):
             if self.cube is not None:
                 self.__Update_Band_Image()
 
+    def __Band_Slider_Changed(self, value):
+        self.__Update_Band_Spinboxes()
+        self.__Band_Range_Changed()
+
+    def __Update_Band_Spinboxes(self):
+        pixel_left, pixel_right = self.Status.Band1_Slider.value()
+        left_box = self.Status.Band1_L_Spinbox
+        right_box = self.Status.Band1_R_Spinbox
+        left_box.blockSignals(True)
+        right_box.blockSignals(True)
+        try:
+            if (self.calibration_enabled and self.wavelength_range is not None):
+                wavelength_min = float(np.min(self.wavelength_range))
+                wavelength_max = float(np.max(self.wavelength_range))
+                for box in (left_box, right_box):
+                    box.setDecimals(1)
+                    box.setRange(wavelength_min, wavelength_max)
+                    box.setSuffix(" nm")
+                left_box.setValue(self.__Pixel_To_Wavelength(pixel_left))
+                right_box.setValue(self.__Pixel_To_Wavelength(pixel_right))
+            else:
+                spectral_max = self.Status.Band1_Slider.maximum()
+                for box in (left_box, right_box):
+                    box.setDecimals(1)
+                    box.setRange(0, spectral_max)
+                    box.setSuffix(" px")
+                left_box.setValue(pixel_left)
+                right_box.setValue(pixel_right)
+        finally:
+            left_box.blockSignals(False)
+            right_box.blockSignals(False)
+
+    def __Band_Spinbox_Changed(self):
+        left_value = self.Status.Band1_L_Spinbox.value()
+        right_value = self.Status.Band1_R_Spinbox.value()
+        if (self.calibration_enabled and self.wavelength_range is not None):
+            pixel_left = self.__Wavelength_To_Pixel(left_value)
+            pixel_right = self.__Wavelength_To_Pixel(right_value)
+        else:
+            pixel_left = int(round(left_value))
+            pixel_right = int(round(right_value))
+        pixel_left, pixel_right = sorted((pixel_left, pixel_right))
+        self.Status.Band1_Slider.setValue((pixel_left, pixel_right))
+
+    @pyqtSlot(bool)
+    def __Calibration_Mode_Changed(self, checked):
+        if checked:
+            self.__Update_Wavelength_Calibration()
+            if self.wavelength_range is None:
+                QMessageBox.warning(self, "Calibration", "Invalid wavelength calibration.")
+                self.Status.Calibration_Enable_Checkbox.blockSignals(True)
+                self.Status.Calibration_Enable_Checkbox.setChecked(False)
+                self.Status.Calibration_Enable_Checkbox.blockSignals(False)
+                self.calibration_enabled = False
+                return
+        self.calibration_enabled = checked
+        # if self.calibration_enabled:
+        self.__Update_Band_Spinboxes()
+        self.__Update_Spectrum()
+
+    def __Pixel_To_Wavelength(self, pixel):
+        if self.wavelength_range is None:
+            return None
+        pixel = int(np.clip(pixel, 0, len(self.wavelength_range) - 1))
+        return float(self.wavelength_range[pixel])
+
+    def __Wavelength_To_Pixel(self, wavelength):
+        if self.wavelength_range is None:
+            return None
+        return int(np.argmin(np.abs(self.wavelength_range - wavelength)))
+
     def __Update_Wavelength_Calibration(self):
         pixel_left = self.Status.Calibration_Wavelength_StartPixel_Spinbox.value()
         pixel_right = self.Status.Calibration_Wavelength_EndPixel_Spinbox.value()
@@ -548,6 +625,24 @@ class HSIWindow(QWidget):
         self.wavelength_range = wavelength_left + (pixels - pixel_left) * slope
         self.Status.Calibration_Wavelength_Value.setText(f"{self.wavelength_range[0]:.1f} - {self.wavelength_range[-1]:.1f} nm")
         self.__Update_Spectrum()
+
+    def __Save_HSI_Cube(self):
+        if (self.cube is None or self.cube_path is None):
+            QMessageBox.warning(self, "Save HSI Cube", "No HSI cube is available.")
+            return
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save HSI Cube", "hsi_cube.npy", "Numpy Cube (*.npy)")
+        if not file_path:
+            return
+        if not file_path.lower().endswith(".npy"):
+            file_path += ".npy"
+        source = os.path.abspath(self.cube_path)
+        destination = os.path.abspath(file_path)
+        try:
+            if source != destination:
+                shutil.copy2(source, destination)
+            QMessageBox.information(self, "Save HSI Cube", f"Cube Saved \n {destination}")
+        except Exception as e:
+            QMessageBox.critical(self, "Save HSI Cube", f"{type(e).__name__}: {e}")
 
 
     # @pyqtSlot(object)
@@ -948,7 +1043,7 @@ class StatusWidgets(QWidget):
 
         self.UI_Component()
         self.UI_Layout(Layout)
-        self.EventProcess()
+        # self.EventProcess()
 
     def UI_Layout(self, Layout):
 
@@ -970,7 +1065,7 @@ class StatusWidgets(QWidget):
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Metadata (Last Frame)')
 
         Temp_Layout = QVBoxLayout()
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Calibration_Wavelength_Prompt, self.Calibration_Wavelength_Value), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Calibration_Wavelength_Prompt, self.Calibration_Wavelength_Value, self.Calibration_Enable_Checkbox), 'Horizontal'))
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Calibration_Wavelength_StartPixel_Prompt, self.Calibration_Wavelength_StartPixel_Spinbox,
                                                              self.Calibration_Wavelength_Startwl_Prompt, self.Calibration_Wavelength_Startwl_Spinbox), 'Horizontal'))
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Calibration_Wavelength_EndPixel_Prompt, self.Calibration_Wavelength_EndPixel_Spinbox,
@@ -982,8 +1077,6 @@ class StatusWidgets(QWidget):
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Band1_L_Spinbox, self.Band1_Slider, self.Band1_R_Spinbox), 'Horizontal'))
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Save_Button), 'Horizontal'))
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Post Processing')
-
-
 
     def UI_Component(self):
 
@@ -1040,6 +1133,9 @@ class StatusWidgets(QWidget):
         self.Calibration_Wavelength_Prompt.setFixedSize(*LabelSize)
         self.Calibration_Wavelength_Value = QLabel("--")
 
+        self.Calibration_Enable_Checkbox = QCheckBox("Enable")
+        self.Calibration_Enable_Checkbox.setChecked(False)
+
         self.Calibration_Wavelength_StartPixel_Prompt = QLabel("Pixel (Left)  ")
         # self.Calibration_Wavelength_StartPixel_Prompt.setFixedSize(*LabelSize)
         self.Calibration_Wavelength_StartPixel_Spinbox = QSpinBox()
@@ -1080,17 +1176,21 @@ class StatusWidgets(QWidget):
         self.Band1_Weight.setKeyboardTracking(False)
 
         self.Band1_Slider = QRangeSlider()
-        self.Band1_L_Spinbox = QSpinBox()
-        self.Band1_R_Spinbox = QSpinBox()
+        self.Band1_L_Spinbox = QDoubleSpinBox()
+        self.Band1_L_Spinbox.setDecimals(1)
+        self.Band1_R_Spinbox = QDoubleSpinBox()
+        self.Band1_R_Spinbox.setDecimals(1)
+
 
         Uqt.SliderHelper._init_range_slider(self.Band1_Slider, self.Band1_L_Spinbox, self.Band1_R_Spinbox, 0, 639, 1)
 
         self.Save_Button = QPushButton("Save HSI Cube")
+        self.Save_Button.setEnabled(False)
 
-    def EventProcess(self):
-        self.Band1_L_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(value, self.Band1_Slider.value()[1], self.Band1_Slider))
-        self.Band1_R_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(self.Band1_Slider.value()[0], value, self.Band1_Slider))
-        self.Band1_Slider.valueChanged.connect(lambda values: Uqt.SliderHelper.RangeSliderChanged(self.Band1_L_Spinbox, self.Band1_R_Spinbox, values))
+    # def EventProcess(self):
+    #     self.Band1_L_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(value, self.Band1_Slider.value()[1], self.Band1_Slider))
+    #     self.Band1_R_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(self.Band1_Slider.value()[0], value, self.Band1_Slider))
+    #     self.Band1_Slider.valueChanged.connect(lambda values: Uqt.SliderHelper.RangeSliderChanged(self.Band1_L_Spinbox, self.Band1_R_Spinbox, values))
 
 
 if __name__ == '__main__':
