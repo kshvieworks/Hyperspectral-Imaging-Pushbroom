@@ -65,7 +65,7 @@ class HSIWindow(QWidget):
         self.latest_camera_image = None
         self.camera_image_flag = False
         self.preview_timer = QTimer(self)
-        self.preview_timer.setInterval(100)
+        self.preview_timer.setInterval(5)
         self.preview_timer.timeout.connect(self.__Update_Camera_Preview)
 
     # Process Timer
@@ -234,7 +234,7 @@ class HSIWindow(QWidget):
 
     def _Start_Camera_Process(self, serial, exposure, fps, temperature):
         ctx = mp.get_context('spawn')
-        self.camera_frame_queue = ctx.Queue(maxsize=1)
+        self.camera_frame_queue = ctx.Queue(maxsize=3) # Important Parameter for Preivew
         self.camera_status_queue = ctx.Queue()
         self.camera_stop_event = ctx.Event()
 
@@ -299,7 +299,8 @@ class HSIWindow(QWidget):
         if show_frame:
             if self.latest_camera_image is None:
                 return
-            image, _ = self.__Select_Band_Range(self.latest_camera_image)
+            image = self.__Build_Band_Preview(self.latest_camera_image)
+
             align_left = False
 
         else:
@@ -320,6 +321,22 @@ class HSIWindow(QWidget):
         band_right = int(np.clip(band_right, band_left, spectral_size - 1))
         selected = data[..., band_left:band_right+1]
         return (selected, (band_left, band_right))
+
+    def __Build_Band_Preview(self, image):
+        if image is None:
+            return None
+
+        selected, band_range = self.__Select_Band_Range(image)
+
+        if selected is None:
+            return None
+
+        band_left, band_right = band_range
+        preview = np.zeros_like(image)
+        preview[..., band_left:band_right+1] = selected
+        return preview
+
+
 
     def __Update_Acquisition_Frame(self):
         if self.acquisition_frame_queue is None:

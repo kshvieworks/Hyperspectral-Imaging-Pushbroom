@@ -34,7 +34,7 @@ def camera_process_main(serial, exposure, fps, temperature, frame_queue, status_
         camera = CC.Controller(serial)
         camera.open()
         camera.Configure(exposure_s = exposure, temperature_c = temperature)
-        camera.Start_Preview(fps=fps, buffer_size=1)
+        camera.Start_Preview(fps=fps, buffer_size=3)
         status_queue.put(("connected", None))
         while not stop_event.is_set():
             image, metadata = camera.Get_Preview_Frame(timeout_s = 1)
