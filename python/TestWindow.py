@@ -56,6 +56,7 @@ class HSIWindow(QWidget):
         self.camera_process = None
         self.camera_frame_queue = None
         self.camera_status_queue = None
+        self.camera_command_queue = None
         self.camera_stop_event = None
 
         # self.thread = None
@@ -156,6 +157,7 @@ class HSIWindow(QWidget):
         self.Config.stage_home_requested.connect(self.stage_worker.home)
         self.Config.stage_speed_requested.connect(self.stage_worker.set_speed)
         self.Config.start_acquisition_requested.connect(self.Start_Acquisition)
+        self.Config.camera_config_requested.connect(self.__Update_Camera_Configuration)
 
         self.Status.Calibration_Wavelength_StartPixel_Spinbox.valueChanged.connect(self.__Update_Wavelength_Calibration)
         self.Status.Calibration_Wavelength_EndPixel_Spinbox.valueChanged.connect(self.__Update_Wavelength_Calibration)
@@ -194,6 +196,7 @@ class HSIWindow(QWidget):
         stage_serial = self.Config.Stage_Serial_Entry.text().strip()
         exposure = self.Config.Exposure_Spinbox.value()
         temperature = self.Config.Temperature_Spinbox.value()
+        detector_mode = self.Config.Gain_Combo.currentData()
         stage_speed = self.Config.Stage_Speed_Spinbox.value()
         start_mm = self.Config.Stage_Start_Spinbox.value()
         end_mm = self.Config.Stage_End_Spinbox.value()
@@ -204,8 +207,9 @@ class HSIWindow(QWidget):
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         output_path = os.path.join(os.getcwd(), f"HSI_Cube_{timestamp}.npy")
 
-        self._Start_Acquisition_Process(camera_serial = camera_serial, stage_serial = stage_serial, exposure = exposure, temperature = temperature, stage_speed = stage_speed,
-                                        start_mm = start_mm, end_mm = end_mm, step_mm = step_mm, settle_s = settle_s, output_path = output_path)
+        self._Start_Acquisition_Process(camera_serial = camera_serial, stage_serial = stage_serial, exposure = exposure, temperature = temperature,
+                                        detector_mode = detector_mode, stage_speed = stage_speed, start_mm = start_mm, end_mm = end_mm, step_mm = step_mm,
+                                        settle_s = settle_s, output_path = output_path)
 
     def Connect_Camera(self, serial):
         if (self.camera_process is not None and self.camera_process.is_alive()):
@@ -234,7 +238,7 @@ class HSIWindow(QWidget):
     def Camera_Error(self, message):
         QMessageBox.critical(self, "Camera Error", f"{message}")
 
-    def _Start_Acquisition_Process(self, camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, output_path):
+    def _Start_Acquisition_Process(self, camera_serial, stage_serial, exposure, temperature, detector_mode,stage_speed, start_mm, end_mm, step_mm, settle_s, output_path):
         if (self.acquisition_process is not None and self.acquisition_process.is_alive()):
             return
 
@@ -243,7 +247,7 @@ class HSIWindow(QWidget):
         self.acquisition_status_queue = ctx.Queue()
         self.acquisition_stop_event = ctx.Event()
         self.acquisition_process = ctx.Process(target = UP.acquisition_process_main,
-                                               args = (camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, output_path,
+                                               args = (camera_serial, stage_serial, exposure, temperature, detector_mode, stage_speed, start_mm, end_mm, step_mm, settle_s, output_path,
                                                        self.acquisition_frame_queue, self.acquisition_status_queue, self.acquisition_stop_event))
         self.Config.Start_Acquisition_Button.setEnabled(False)
         self.Config.Start_Acquisition_Button.setText("Acquisition...")
@@ -254,10 +258,11 @@ class HSIWindow(QWidget):
         ctx = mp.get_context('spawn')
         self.camera_frame_queue = ctx.Queue(maxsize=3) # Important Parameter for Preivew
         self.camera_status_queue = ctx.Queue()
+        self.camera_stop_event = ctx.Queue()
         self.camera_stop_event = ctx.Event()
 
         self.camera_process = ctx.Process(target = UP.camera_process_main,
-                                          args=(serial, exposure, fps, temperature, self.camera_frame_queue, self.camera_status_queue, self.camera_stop_event))
+                                          args=(serial, exposure, fps, temperature, self.camera_frame_queue, self.camera_status_queue, self.camera_command_queue,self.camera_stop_event))
         self.camera_process.start()
         self.preview_timer.start()
         self.process_timer.start()
@@ -279,10 +284,13 @@ class HSIWindow(QWidget):
             self.camera_frame_queue.close()
         if self.camera_status_queue is not None:
             self.camera_status_queue.close()
+        if self.camera_command_queue is not None:
+            self.camera_command_queue.close()
 
         self.camera_process = None
         self.camera_frame_queue = None
         self.camera_status_queue = None
+        self.camera_command_queue = None
         self.camera_stop_event = None
         self.Config.Connection_Button.setEnabled(True)
         self.Config.Connection_Button.setText("Now Disconnected. Click to Connect")
@@ -434,6 +442,7 @@ class HSIWindow(QWidget):
         self.stage_connected = True
         self.Config.Stage_Connection_Button.setText("Now Connected. Click to Disconnect")
         self.__Update_Stage_Position(position)
+        self.Config.stage_speed_requested.emit(self.Config.Stage_Speed_Spinbox.value())
 
     @pyqtSlot()
     def __Stage_Disconnected(self):
@@ -470,12 +479,18 @@ class HSIWindow(QWidget):
         # self.ImagePreview.Update_Preview(latest_image)
         self.__Update_Spectrum()
 
+    def __Update_Camera_Configuration(self, name, value):
+        if (self.camera_process is None or not self.camera_process.is_alive() or self.camera_command_queue is None):
+            return
+        self.camera_command_queue.put((name, value))
+
     @pyqtSlot()
     def __Poll_Camera_Process(self):
         if self.camera_status_queue is not None:
             try:
                 while True:
                     status, data = (self.camera_status_queue.get_nowait())
+                    self.Status.Status_CPU_Value.setText(f"{psutil.cpu_percent()}%")
                     if status == "connected":
                         self.Config.Connection_Button.setEnabled(True)
                         self.Config.Connection_Button.setText("Now Connected. Click to Disconnect")
@@ -486,6 +501,8 @@ class HSIWindow(QWidget):
                     elif status == "disconnected":
                         self.Status.Status_Camera_Value.setText("Disconnected")
                         pass
+                    elif status == "detector_modes":
+                        self.Config.Update_Gain_Modes(data)
                     elif status == "telemetry":
                         self.__Update_Telemetry(data)
             except Empty:
@@ -741,6 +758,7 @@ class HSIWindow(QWidget):
 class ConfigWidget(QWidget):
     camera_connect_requested = pyqtSignal(str)
     camera_disconnect_requested = pyqtSignal()
+    camera_config_requested = pyqtSignal(str, object)
     stage_connect_requested = pyqtSignal(str)
     stage_disconnect_requested = pyqtSignal()
     stage_move_requested = pyqtSignal(float)
@@ -773,7 +791,7 @@ class ConfigWidget(QWidget):
         Temp_Layout = QVBoxLayout()
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Exposure_Prompt, self.Exposure_Spinbox), 'Horizontal'))
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.FPS_Prompt, self.FPS_Spinbox), 'Horizontal'))
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Trigger_Prompt, self.Trigger_Combo), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Gain_Prompt, self.Gain_Combo), 'Horizontal'))
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Acquisition Setting')
 
         Temp_Layout = QVBoxLayout()
@@ -846,10 +864,10 @@ class ConfigWidget(QWidget):
         self.FPS_Spinbox.setRange(0.1, 1000)
         self.FPS_Spinbox.setSuffix(" fps")
 
-        self.Trigger_Prompt = QLabel("Trigger Time")
-        self.Trigger_Prompt.setFixedSize(*LabelSize)
-        self.Trigger_Combo = QComboBox()
-        self.Trigger_Combo.addItems(["Free Run", "Software", "External"])
+        self.Gain_Prompt = QLabel("Analog Gain")
+        self.Gain_Prompt.setFixedSize(*LabelSize)
+        self.Gain_Combo = QComboBox()
+        # self.Gain_Combo.addItems(["Free Run", "Software", "External"])
 
     # UI for Preview Configuration
         self.ROI_Prompt = QLabel("ROI")
@@ -904,7 +922,6 @@ class ConfigWidget(QWidget):
         self.Stage_Home_Button = QPushButton("Init")
         self.Stage_Home_Button.setFixedSize(*ButtonSize)
 
-
         self.Stage_Position = QLabel("0")
 
         self.Stage_Start_Prompt = QLabel("Start Position")
@@ -947,6 +964,10 @@ class ConfigWidget(QWidget):
 
         self.Start_Acquisition_Button.clicked.connect(self.Start_Acquisition_Event)
 
+        self.Exposure_Spinbox.editingFinished.connect(lambda: self.camera_config_requested.emit("exposure", self.Exposure_Spinbox.value()))
+        self.FPS_Spinbox.editingFinished.connect(lambda: self.camera_config_requested.emit("fps", self.FPS_Spinbox.value()))
+        self.Temperature_Spinbox.editingFinished.connect(lambda: self.camera_config_requested.emit("temperature", self.Temperature_Spinbox.value()))
+        self.Gain_Combo.currentIndexChanged.connect(self.__Gain_Changed)
 
     def CameraConnection_Event(self):
         if self.Connection_Button.text() == "Now Disconnected. Click to Connect":
@@ -980,6 +1001,22 @@ class ConfigWidget(QWidget):
 
     def Start_Acquisition_Event(self):
         self.start_acquisition_requested.emit()
+
+    def Update_Gain_Modes(self, modes):
+        self.Gain_Combo.blockSignals(True)
+        self.Gain_Combo.clear()
+        for item in modes:
+            mode = item["mode"]
+            gain = item["gain"]
+            self.Gain_Combo.addItem(f"Mode {mode} - Gain {gain}", mode)
+        self.Gain_Combo.blockSignals(False)
+
+    def __Gain_Changed(self):
+        mode = self.Gain_Combo.currentData()
+        if mode is None:
+            return
+        self.camera_config_requested.emit("detector_mode", mode)
+
 
 
 class ImagePreviewWidgets(QWidget):

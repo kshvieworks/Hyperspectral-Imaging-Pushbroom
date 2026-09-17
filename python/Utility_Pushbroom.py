@@ -27,17 +27,38 @@ def put_latest(queue, data):
         except Full:
             pass
 
-def camera_process_main(serial, exposure, fps, temperature, frame_queue, status_queue, stop_event):
+def camera_process_main(serial, exposure, fps, temperature, frame_queue, status_queue, command_queue, stop_event):
     camera = None
     frame_queue.cancel_join_thread()
     try:
         camera = CC.Controller(serial)
         camera.open()
+        modes = camera.Get_Detector_Modes()
+        status_queue.put(("detector_modes", modes))
         camera.Configure(exposure_s = exposure, temperature_c = temperature)
         camera.Start_Preview(fps=fps, buffer_size=3)
         status_queue.put(("connected", None))
         last_telemetry = 0.0
+        current_fps = fps
         while not stop_event.is_set():
+            try:
+                while True:
+                    command, value = command_queue.get_nowait()
+                    if command == "exposure":
+                        camera.Set_Exposure(value)
+                    elif command == "fps":
+                        current_fps = float(value)
+                        camera.Set_Frame_Rate(current_fps)
+                    elif command == "temperature":
+                        camera.Set_Temperature(value)
+                    elif command == "detector_mode":
+                        camera.Stop_Acquisition()
+                        camera.Set_Detector_Mode(value)
+                        camera.Start_Preview(fps=current_fps, buffer_size=3)
+                    status_queue.put(("telemetry", camera.Get_Telemetry()))
+            except Empty:
+                pass
+
             image, metadata = camera.Get_Preview_Frame(timeout_s = 1)
             metadata_dict = metadata_to_dict(metadata, image)
             if stop_event.is_set():
@@ -78,7 +99,7 @@ def build_scan_positions(start_mm, end_mm, step_mm):
     positions = (start_mm + np.arange(n_steps) * step_mm)
     return positions
 
-def acquisition_process_main(camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, output_path, frame_queue, status_queue, stop_event):
+def acquisition_process_main(camera_serial, stage_serial, exposure, temperature, detector_mode,stage_speed, start_mm, end_mm, step_mm, settle_s, output_path, frame_queue, status_queue, stop_event):
     camera = None
     stage = None
     cube = None
@@ -91,6 +112,9 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
         # --------------
         camera = CC.Controller(camera_serial)
         camera.open()
+        if detector_mode is not None:
+            camera.Set_Detector_Mode(detector_mode)
+
         camera.Configure(exposure_s = exposure, temperature_c = temperature)
 
         # --------------

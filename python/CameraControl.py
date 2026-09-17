@@ -14,9 +14,9 @@ class Controller:
         self.camera.open(index, mode)
 
     def Configure(self, exposure_s = 1E-3, temperature_c = None):
-        self._Configure_ExposureTime(exposure_s)
+        self.Set_Exposure(exposure_s)
         if temperature_c is not None:
-            self._Configure_Temperature(temperature_c)
+            self.Set_Temperature(temperature_c)
 
         self.camera.set_metadata_enabled(True)
 
@@ -27,8 +27,7 @@ class Controller:
         return image, metadata
 
     def Start_Preview(self, fps=50.0, buffer_size=1):
-        self.camera.set_frame_rate_max(fps)
-        self.camera.set_frame_rate_max_enabled(True)
+        self.Set_Frame_Rate(fps)
         self.camera.capture_video(buffer_size)
         print("FPS Limit Enabled", self.camera.get_frame_rate_max_enabled())
         print("FPS Limit", self.camera.get_frame_rate_max())
@@ -39,11 +38,21 @@ class Controller:
             raise TypeError("Timeout must be an integer for pecamerapy.get_image()")
         return self.camera.get_image(timeout_s)
 
+    def Get_Detector_Modes(self):
+        modes = []
+        count = self.camera.get_detector_mode_count()
+
+        for mode in range(count):
+            try:
+                gain = self.camera.get_detector_mode_property_value(mode, pecamerapy.PROP_GAIN)
+            except Exception:
+                gain = None
+            modes.append({"mode": mode, "gain": gain})
+        return modes
+
+
     def Stop_Acquisition(self):
         self.abort()
-
-    def _Configure_ExposureTime(self, exposure_s):
-        self.camera.set_exposure_time(exposure_s)
 
     def close(self):
         self.camera.close()
@@ -51,9 +60,25 @@ class Controller:
     def abort(self):
         self.camera.abort()
 
+    def Set_Exposure(self, exposure_s):
+        self._Configure_ExposureTime(float(exposure_s))
+
+    def Set_Temperature(self, temperature_c):
+        self._Configure_Temperature(temperature_c)
+
+    def Set_Frame_Rate(self, fps):
+        self.camera.set_frame_rate_max(float(fps))
+        self.camera.set_frame_rate_max_enabled(True)
+
+    def Set_Detector_Mode(self, mode):
+        self.camera.set_detector_mode(int(mode))
+
     @staticmethod
     def _OpenMode():
        return pecamerapy.OpenMode.USB3
+
+    def _Configure_ExposureTime(self, exposure_s):
+        self.camera.set_exposure_time(exposure_s)
 
     def _Configure_Temperature(self, temperature_c):
         temp_min, temp_max, temp_step = (self.camera.get_target_temperature_range())
