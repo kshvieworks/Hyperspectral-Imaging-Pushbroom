@@ -78,7 +78,7 @@ def build_scan_positions(start_mm, end_mm, step_mm):
     positions = (start_mm + np.arange(n_steps) * step_mm)
     return positions
 
-def acquisition_process_main(camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, band_index, output_path, frame_queue, status_queue, stop_event):
+def acquisition_process_main(camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, output_path, frame_queue, status_queue, stop_event):
     camera = None
     stage = None
     cube = None

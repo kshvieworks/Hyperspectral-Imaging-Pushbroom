@@ -199,15 +199,13 @@ class HSIWindow(QWidget):
         end_mm = self.Config.Stage_End_Spinbox.value()
         step_mm = self.Config.Stage_Steps_Spinbox.value()
 
-        band_index = tuple(int(v) for v in self.Status.Band1_Slider.value())
-
         settle_s = 0.1
 
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         output_path = os.path.join(os.getcwd(), f"HSI_Cube_{timestamp}.npy")
 
         self._Start_Acquisition_Process(camera_serial = camera_serial, stage_serial = stage_serial, exposure = exposure, temperature = temperature, stage_speed = stage_speed,
-                                        start_mm = start_mm, end_mm = end_mm, step_mm = step_mm, settle_s = settle_s, band_index = band_index, output_path = output_path)
+                                        start_mm = start_mm, end_mm = end_mm, step_mm = step_mm, settle_s = settle_s, output_path = output_path)
 
     def Connect_Camera(self, serial):
         if (self.camera_process is not None and self.camera_process.is_alive()):
@@ -236,7 +234,7 @@ class HSIWindow(QWidget):
     def Camera_Error(self, message):
         QMessageBox.critical(self, "Camera Error", f"{message}")
 
-    def _Start_Acquisition_Process(self, camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, band_index, output_path):
+    def _Start_Acquisition_Process(self, camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, output_path):
         if (self.acquisition_process is not None and self.acquisition_process.is_alive()):
             return
 
@@ -245,7 +243,7 @@ class HSIWindow(QWidget):
         self.acquisition_status_queue = ctx.Queue()
         self.acquisition_stop_event = ctx.Event()
         self.acquisition_process = ctx.Process(target = UP.acquisition_process_main,
-                                               args = (camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, band_index, output_path,
+                                               args = (camera_serial, stage_serial, exposure, temperature, stage_speed, start_mm, end_mm, step_mm, settle_s, output_path,
                                                        self.acquisition_frame_queue, self.acquisition_status_queue, self.acquisition_stop_event))
         self.Config.Start_Acquisition_Button.setEnabled(False)
         self.Config.Start_Acquisition_Button.setText("Acquisition...")
@@ -406,16 +404,6 @@ class HSIWindow(QWidget):
 
                         self.Config.Start_Acquisition_Button.setText(f"Acquiring {linenumber} / {total}")
                         self.Config.Stage_Position.setText(f"{position:.3f} mm")
-                        band_index = data.get("band_index")
-                        band_line = data.get("band_line")
-                        self.live_band_lines = index + 1
-                        if band_line is not None:
-                            if self.live_band_image is None:
-                                spatial_size = len(band_line)
-                                self.live_band_image = np.zeros((spatial_size, total), dtype = band_line.dtype)
-                                self.live_band_index = band_index
-                            self.live_band_image[:, index] = np.mean(band_line, axis = -1)
-                            self.__Update_Preview()
 
                     elif status == "finished":
                         cube_path = data["path"]
@@ -693,7 +681,7 @@ class HSIWindow(QWidget):
         shape = metadata.get("image_shape")
 
         self.Status.Meta_FrameID_Value.setText("--" if frame_id is None else f"{frame_id}")
-        self.Status.Meta_TimeStamp_Value.setText("--" if timestamp is None else f"{timestamp}")
+        self.Status.Meta_TimeStamp_Value.setText("--" if timestamp is None else f"{timestamp:.3f}")
         self.Status.Meta_ExposureTime_Value.setText("--" if exposure is None else f"{exposure}")
 
         if shape is None:
@@ -835,7 +823,7 @@ class ConfigWidget(QWidget):
         self.Temperature_Prompt = QLabel("Sensor Temperature")
         self.Temperature_Prompt.setFixedSize(*LabelSize)
         self.Temperature_Spinbox = QSpinBox()
-        # self.Temperature_Spinbox.setRange(-60, 30)
+        self.Temperature_Spinbox.setRange(-60, 30)
         self.Temperature_Spinbox.setValue(0)
         self.Temperature_Spinbox.setSuffix(" °C")
 
