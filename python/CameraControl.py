@@ -40,6 +40,7 @@ class Controller:
 
     def Get_Detector_Modes(self):
         modes = []
+        current_mode = self.camera.get_detector_mode()
         count = self.camera.get_detector_mode_count()
 
         for mode in range(count):
@@ -47,7 +48,7 @@ class Controller:
                 gain = self.camera.get_detector_mode_property_value(mode, pecamerapy.PROP_GAIN)
             except Exception:
                 gain = None
-            modes.append({"mode": mode, "gain": gain})
+            modes.append({"mode": mode, "gain": gain, "selected": (mode == current_mode)})
         return modes
 
 

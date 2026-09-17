@@ -258,7 +258,7 @@ class HSIWindow(QWidget):
         ctx = mp.get_context('spawn')
         self.camera_frame_queue = ctx.Queue(maxsize=3) # Important Parameter for Preivew
         self.camera_status_queue = ctx.Queue()
-        self.camera_stop_event = ctx.Queue()
+        self.camera_command_queue = ctx.Queue()
         self.camera_stop_event = ctx.Event()
 
         self.camera_process = ctx.Process(target = UP.camera_process_main,
@@ -1005,10 +1005,15 @@ class ConfigWidget(QWidget):
     def Update_Gain_Modes(self, modes):
         self.Gain_Combo.blockSignals(True)
         self.Gain_Combo.clear()
-        for item in modes:
+        selected_index = -1
+        for index, item in enumerate(modes):
             mode = item["mode"]
             gain = item["gain"]
             self.Gain_Combo.addItem(f"Mode {mode} - Gain {gain}", mode)
+            if item.get("selected", False):
+                selected_index = index
+        if selected_index >= 0:
+            self.Gain_Combo.setCurrentIndex(selected_index)
         self.Gain_Combo.blockSignals(False)
 
     def __Gain_Changed(self):
