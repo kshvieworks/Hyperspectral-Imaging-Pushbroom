@@ -22,6 +22,7 @@ import Utility_Pyqt as Uqt
 # import CameraControl as CC
 import Utility_Pushbroom as UP
 import shutil
+import uuid
 
 from pylablib.devices import Thorlabs
 from pecamerapy import Camera
@@ -153,7 +154,6 @@ class HSIWindow(QWidget):
         self.Config.stage_speed_requested.connect(self.stage_worker.set_speed)
         self.Config.start_acquisition_requested.connect(self.Start_Acquisition)
 
-        self.Status.Band1_Slider.valueChanged.connect(self.__Band_Range_Changed)
         self.Status.Calibration_Wavelength_StartPixel_Spinbox.valueChanged.connect(self.__Update_Wavelength_Calibration)
         self.Status.Calibration_Wavelength_EndPixel_Spinbox.valueChanged.connect(self.__Update_Wavelength_Calibration)
         self.Status.Calibration_Wavelength_Startwl_Spinbox.valueChanged.connect(self.__Update_Wavelength_Calibration)
@@ -180,6 +180,8 @@ class HSIWindow(QWidget):
             QMessageBox.warning(self, 'Acquisition', 'Disconnect the stage manual control first')
             return
 
+        self.__Release_Cube()
+
         self.live_band_image = None
         self.live_band_index = None
         self.live_band_lines = 0
@@ -197,7 +199,7 @@ class HSIWindow(QWidget):
 
         settle_s = 0.1
 
-        output_path = os.path.join(os.getcwd(), "test_cube.npy")
+        output_path = os.path.join(os.getcwd(), f"HSI_Cube_{uuid.uuid4().hex}.npy")
 
         self._Start_Acquisition_Process(camera_serial = camera_serial, stage_serial = stage_serial, exposure = exposure, temperature = temperature, stage_speed = stage_speed,
                                         start_mm = start_mm, end_mm = end_mm, step_mm = step_mm, settle_s = settle_s, band_index = band_index, output_path = output_path)
@@ -625,6 +627,16 @@ class HSIWindow(QWidget):
         self.wavelength_range = wavelength_left + (pixels - pixel_left) * slope
         self.Status.Calibration_Wavelength_Value.setText(f"{self.wavelength_range[0]:.1f} - {self.wavelength_range[-1]:.1f} nm")
         self.__Update_Spectrum()
+
+    def __Release_Cube(self):
+        if self.cube is not None:
+            if isinstance(self.cube, np.memmap):
+                mmap_object = getattr(self.cube, "_mmap", None)
+
+                if mmap_object is not None:
+                    mmap_object.close()
+        self.cube = None
+        self.cube_path = None
 
     def __Save_HSI_Cube(self):
         if (self.cube is None or self.cube_path is None):
