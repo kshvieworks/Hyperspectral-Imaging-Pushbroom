@@ -185,6 +185,7 @@ class HSIWindow(QWidget):
 
         self.__Release_Cube()
 
+        self.live_cube = None
         self.live_band_image = None
         self.live_band_index = None
         self.live_band_lines = 0
@@ -357,18 +358,21 @@ class HSIWindow(QWidget):
     def __Update_Acquisition_Frame(self):
         if self.acquisition_frame_queue is None:
             return
-        latest_image = None
+        latest_packet = None
         try:
             while True:
-                latest_image = (self.acquisition_frame_queue.get_nowait())
+                latest_packet = (self.acquisition_frame_queue.get_nowait())
         except Empty:
             pass
 
-        if latest_image is None:
+        if latest_packet is None:
             return
 
-        self.latest_camera_image = latest_image
-        self.__Update_Spectrum_Range(latest_image)
+        image, metadata = latest_packet
+
+        self.latest_camera_image = image
+        self.__Update_Metadata(metadata)
+        self.__Update_Spectrum_Range(image)
         self.__Update_Preview()
         # self.ImagePreview.Update_Preview(latest_image)
         self.__Update_Spectrum()
@@ -378,12 +382,13 @@ class HSIWindow(QWidget):
         self.__Update_Acquisition_Frame()
         if self.acquisition_status_queue is not None:
             try:
-                self.Status.Status_Camera_Value.setText("Acquiring")
                 while True:
                     status, data = (self.acquisition_status_queue.get_nowait())
                     self.Status.Status_CPU_Value.setText(f"{psutil.cpu_percent()}%")
                     if status == "started":
                         total = data["lines"]
+                        self.Status.Status_Camera_Value.setText("Acquiring")
+                        self.Status.Status_AcquiredFrames_Value.setText(f"0 / {total}")
                         self.Config.Start_Acquisition_Button.setText(f"Acquiring 0 / {total}")
                     elif status == "progress":
                         linenumber = data["index"]
@@ -391,6 +396,7 @@ class HSIWindow(QWidget):
                         total = data["total"]
                         position = data["position"]
                         image_now = data['image']
+                        self.Status.Status_AcquiredFrames_Value.setText(f"{linenumber} / {total}")
 
                         if self.live_cube is None:
                             self.live_cube = np.empty((total, image_now.shape[0], image_now.shape[1]), dtype = image_now.dtype)
@@ -398,7 +404,7 @@ class HSIWindow(QWidget):
                         self.live_band_lines = linenumber
                         self.__Update_Live_Band_Image()
 
-                        self.Config.Start_Acquisition_Button.setText(f"Acquiring {index} / {total}")
+                        self.Config.Start_Acquisition_Button.setText(f"Acquiring {linenumber} / {total}")
                         self.Config.Stage_Position.setText(f"{position:.3f} mm")
                         band_index = data.get("band_index")
                         band_line = data.get("band_line")
@@ -419,11 +425,16 @@ class HSIWindow(QWidget):
                         self.__Update_Band_Image()
                         QMessageBox.information(self, "Acquisition Finished", f"Cube saved:\n{cube_path}")
                         self.Status.Save_Button.setEnabled(True)
+                        self.Status.Status_Camera_Value.setText("Idle")
+                        self.Config.Start_Acquisition_Button.setText(str(data["lines"]))
 
                     elif status == "aborted":
                         QMessageBox.warning(self, "Acquisition Aborted", f"Acquired lines: {data['lines']}")
                     elif status == "error":
                         QMessageBox.critical(self, "Acquisition Error", data)
+                        self.Status.Status_Camera_Value.setText("Error")
+                    elif status == "telemetry":
+                        self.__Update_Telemetry(data)
             except Empty:
                 pass
 
@@ -453,20 +464,20 @@ class HSIWindow(QWidget):
     def __Update_Camera_Preview(self):
         if self.camera_frame_queue is None:
             return
-
-        latest_image = None
+        latest_packet = None
         try:
             while True:
-                latest_image = (self.camera_frame_queue.get_nowait())
-
+                latest_packet = (self.camera_frame_queue.get_nowait())
         except Empty:
             pass
 
-        if latest_image is None:
+        if latest_packet is None:
             return
 
-        self.latest_camera_image = latest_image
-        self.__Update_Spectrum_Range(latest_image)
+        image, metadata = latest_packet
+        self.latest_camera_image = image
+        self.__Update_Metadata(metadata)
+        self.__Update_Spectrum_Range(image)
         self.__Update_Preview()
         # self.ImagePreview.Update_Preview(latest_image)
         self.__Update_Spectrum()
@@ -476,15 +487,19 @@ class HSIWindow(QWidget):
         if self.camera_status_queue is not None:
             try:
                 while True:
-                    status, message = (self.camera_status_queue.get_nowait())
+                    status, data = (self.camera_status_queue.get_nowait())
                     if status == "connected":
                         self.Config.Connection_Button.setEnabled(True)
                         self.Config.Connection_Button.setText("Now Connected. Click to Disconnect")
                         self.Status.Status_Camera_Value.setText("Preview")
                     elif status == "error":
-                        QMessageBox.critical(self, "Camera Connection Error", message)
+                        QMessageBox.critical(self, "Camera Connection Error", data)
+                        self.Status.Status_Camera_Value.setText("Error")
                     elif status == "disconnected":
+                        self.Status.Status_Camera_Value.setText("Disconnected")
                         pass
+                    elif status == "telemetry":
+                        self.__Update_Telemetry(data)
             except Empty:
                 pass
         if (self.camera_process is not None and not self.camera_process.is_alive()):
@@ -669,16 +684,23 @@ class HSIWindow(QWidget):
         self.cube_path = None
 
     def __Update_Metadata(self, metadata):
-        if metadata is not None:
-            self.Status.Meta_FrameID_Value.setText(str(metadata.get("frame_id", "--")))
-            self.Status.Meta_TimeStamp_Value.setText(str(metadata.get("timestamp", "--")))
-            exposure = metadata.get("exposure_time")
-            if exposure is not None:
-                self.Status.Meta_ExposureTime_Value.setText(f"{exposure}")
-            shape = metadata.get("image_shape")
-            if shape is not None:
-                height, width = shape[:2]
-                self.Status.Meta_ImageSize_Value.setText(f"{width} × {height}")
+        if metadata is None:
+            return
+
+        frame_id = metadata.get("frame_id")
+        timestamp = metadata.get("timestamp")
+        exposure = metadata.get("exposure_time")
+        shape = metadata.get("image_shape")
+
+        self.Status.Meta_FrameID_Value.setText("--" if frame_id is None else f"{frame_id}")
+        self.Status.Meta_TimeStamp_Value.setText("--" if timestamp is None else f"{timestamp}")
+        self.Status.Meta_ExposureTime_Value.setText("--" if exposure is None else f"{exposure}")
+
+        if shape is None:
+            self.Status.Meta_ImageSize_Value.setText("--")
+        else:
+            height, width = shape[:2]
+            self.Status.Meta_ImageSize_Value.setText(f"{width} × {height}")
 
     def __Update_Telemetry(self, telemetry):
         temp = telemetry.get("sensor_temperature")

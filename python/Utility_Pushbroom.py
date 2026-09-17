@@ -107,6 +107,7 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
         status_queue.put(("started", {"lines": n_lines}))
 
         acquired_lines = 0
+        last_telemetry = 0.0
 
         # --------------
         # Step and Shoot
@@ -130,6 +131,8 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
             # 4. Capture
             image_now, metadata = (camera.Acquire_Frame())
 
+            metadata_dict = metadata_to_dict(metadata, image_now)
+
             # 5. Allocate Cube at first frame
             if cube is None:
                 cube = np.empty((n_lines, image_now.shape[0], image_now.shape[1]), dtype = image_now.dtype)
@@ -138,15 +141,13 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
             cube[i, :, :] = image_now
             acquired_lines += 1
 
-            # 6-1. Band Representation
-            if not (0 <= band_index[0] <= band_index[1] < image_now.shape[1]):
-                raise IndexError(f"Band index {band_index} is outside spectral range 0 ~ {image_now.shape[1] -1}")
-
-            band_line = image_now[:, band_index[0]:band_index[1]+1].copy()
-
-
             # 7. Send latest frame
-            put_latest(frame_queue, image_now)
+            put_latest(frame_queue, (image_now, metadata_dict))
+
+            now = time.monotonic()
+            if now - last_telemetry >= 0.5:
+                status_queue.put(("telemetry", camera.Get_Telemetry()))
+                last_telemetry = now
 
             # 8. Status
             status_queue.put(("progress", {"index": i+1, "total": n_lines, "position": np.round(position_mm, 3),
