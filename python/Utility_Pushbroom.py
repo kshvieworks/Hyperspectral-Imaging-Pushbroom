@@ -36,11 +36,17 @@ def camera_process_main(serial, exposure, fps, temperature, frame_queue, status_
         camera.Configure(exposure_s = exposure, temperature_c = temperature)
         camera.Start_Preview(fps=fps, buffer_size=3)
         status_queue.put(("connected", None))
+        last_telemetry = 0.0
         while not stop_event.is_set():
             image, metadata = camera.Get_Preview_Frame(timeout_s = 1)
+            metadata_dict = metadata_to_dict(metadata, image)
             if stop_event.is_set():
                 break
-            put_latest(frame_queue, image)
+            put_latest(frame_queue, (image, metadata_dict))
+            now = time.monotonic()
+            if now - last_telemetry >= 0.5:
+                status_queue.put(("telemetry", camera.Get_Telemetry()))
+                last_telemetry = now
     except Exception as e:
         status_queue.put(("error", f"{type(e).__name__}: {e}"))
     finally:
@@ -144,7 +150,7 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
 
             # 8. Status
             status_queue.put(("progress", {"index": i+1, "total": n_lines, "position": np.round(position_mm, 3),
-                                           "band_index": (int(band_index[0]), int(band_index[1])), "band_line": band_line}))
+                                           "image": image_now}))
 
         # --------------
         # Finished / Aborted
@@ -183,11 +189,14 @@ def acquisition_process_main(camera_serial, stage_serial, exposure, temperature,
                 pass
 
 def metadata_to_dict(metadata, image):
-    data = {"frame_id": None, "timestamp": None, "image_shape": image.shape}
+    data = {"frame_id": None, "timestamp": None, "exposure_time": None, "pitch": None, "image_shape": tuple(int(v) for v in image.shape)}
     if metadata is None:
         return data
 
     data["frame_id"] = getattr(metadata, "counter", None)
+    data["timestamp"] = getattr(metadata, "timestamp", None)
+    data["exposure_time"] = getattr(metadata, "exposure_time", None)
+    data["pitch"] = getattr(metadata, "pitch", None)
     return data
 
 

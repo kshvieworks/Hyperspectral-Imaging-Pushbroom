@@ -23,6 +23,8 @@ import Utility_Pyqt as Uqt
 import Utility_Pushbroom as UP
 import shutil
 import uuid
+import psutil
+from datetime import datetime
 
 from pylablib.devices import Thorlabs
 from pecamerapy import Camera
@@ -90,12 +92,13 @@ class HSIWindow(QWidget):
 
     # Acquisition Timer
         self.acquisition_timer = QTimer(self)
-        self.acquisition_timer.setInterval(100)
+        self.acquisition_timer.setInterval(50)
         self.acquisition_timer.timeout.connect(self.__Poll_Acquisition_Process)
 
     # Define Cube
         self.cube = None
         self.cube_path = None
+        self.live_cube = None
         self.live_band_image = None
         self.live_band_index = None
         self.live_band_lines = 0
@@ -199,7 +202,8 @@ class HSIWindow(QWidget):
 
         settle_s = 0.1
 
-        output_path = os.path.join(os.getcwd(), f"HSI_Cube_{uuid.uuid4().hex}.npy")
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        output_path = os.path.join(os.getcwd(), f"HSI_Cube_{timestamp}.npy")
 
         self._Start_Acquisition_Process(camera_serial = camera_serial, stage_serial = stage_serial, exposure = exposure, temperature = temperature, stage_speed = stage_speed,
                                         start_mm = start_mm, end_mm = end_mm, step_mm = step_mm, settle_s = settle_s, band_index = band_index, output_path = output_path)
@@ -222,6 +226,7 @@ class HSIWindow(QWidget):
             return
         self.Config.Connection_Button.setEnabled(False)
         self.Config.Connection_Button.setText("Disconnecting...")
+        self.Status.Status_Camera_Value.setText("Idle")
         self.camera_stop_event.set()
 
     # def Connect_Stage(self, serial):
@@ -373,15 +378,26 @@ class HSIWindow(QWidget):
         self.__Update_Acquisition_Frame()
         if self.acquisition_status_queue is not None:
             try:
+                self.Status.Status_Camera_Value.setText("Acquiring")
                 while True:
                     status, data = (self.acquisition_status_queue.get_nowait())
+                    self.Status.Status_CPU_Value.setText(f"{psutil.cpu_percent()}%")
                     if status == "started":
                         total = data["lines"]
                         self.Config.Start_Acquisition_Button.setText(f"Acquiring 0 / {total}")
                     elif status == "progress":
-                        index = data["index"] - 1
+                        linenumber = data["index"]
+                        index = linenumber - 1
                         total = data["total"]
                         position = data["position"]
+                        image_now = data['image']
+
+                        if self.live_cube is None:
+                            self.live_cube = np.empty((total, image_now.shape[0], image_now.shape[1]), dtype = image_now.dtype)
+                        self.live_cube[index] = image_now
+                        self.live_band_lines = linenumber
+                        self.__Update_Live_Band_Image()
+
                         self.Config.Start_Acquisition_Button.setText(f"Acquiring {index} / {total}")
                         self.Config.Stage_Position.setText(f"{position:.3f} mm")
                         band_index = data.get("band_index")
@@ -464,6 +480,7 @@ class HSIWindow(QWidget):
                     if status == "connected":
                         self.Config.Connection_Button.setEnabled(True)
                         self.Config.Connection_Button.setText("Now Connected. Click to Disconnect")
+                        self.Status.Status_Camera_Value.setText("Preview")
                     elif status == "error":
                         QMessageBox.critical(self, "Camera Connection Error", message)
                     elif status == "disconnected":
@@ -509,6 +526,18 @@ class HSIWindow(QWidget):
             self.Config.SpectrumY_Spinbox.setMaximum(spatial_max)
             self.Config.SpectrumY_Slider.setMaximum(spatial_max)
 
+    def __Update_Live_Band_Image(self):
+        if (self.live_cube is None or self.live_band_lines <= 0):
+            return
+        current_cube = self.live_cube[:self.live_band_lines]
+        band_cube, band_range = self.__Select_Band_Range(current_cube)
+        band_image = np.mean(band_cube, axis=-1, dtype=np.float32)
+        self.live_band_image = np.ascontiguousarray(band_image.T)
+        self.live_band_index = band_range
+        if not self.ImagePreview.Preview_Mode_Button.isChecked():
+            self.__Update_Preview()
+
+
     def __Update_Band_Image(self):
         if self.cube is None:
             return
@@ -528,8 +557,9 @@ class HSIWindow(QWidget):
     def __Band_Range_Changed(self):
         if self.ImagePreview.Preview_Mode_Button.isChecked():
             self.__Update_Preview()
-        else:
-            if self.cube is not None:
+        elif (self.acquisition_process is not None and self.live_cube is not None):
+            self.__Update_Live_Band_Image()
+        elif self.cube is not None:
                 self.__Update_Band_Image()
 
     def __Band_Slider_Changed(self, value):
@@ -555,7 +585,7 @@ class HSIWindow(QWidget):
             else:
                 spectral_max = self.Status.Band1_Slider.maximum()
                 for box in (left_box, right_box):
-                    box.setDecimals(1)
+                    box.setDecimals(0)
                     box.setRange(0, spectral_max)
                     box.setSuffix(" px")
                 left_box.setValue(pixel_left)
@@ -638,11 +668,38 @@ class HSIWindow(QWidget):
         self.cube = None
         self.cube_path = None
 
+    def __Update_Metadata(self, metadata):
+        if metadata is not None:
+            self.Status.Meta_FrameID_Value.setText(str(metadata.get("frame_id", "--")))
+            self.Status.Meta_TimeStamp_Value.setText(str(metadata.get("timestamp", "--")))
+            exposure = metadata.get("exposure_time")
+            if exposure is not None:
+                self.Status.Meta_ExposureTime_Value.setText(f"{exposure}")
+            shape = metadata.get("image_shape")
+            if shape is not None:
+                height, width = shape[:2]
+                self.Status.Meta_ImageSize_Value.setText(f"{width} × {height}")
+
+    def __Update_Telemetry(self, telemetry):
+        temp = telemetry.get("sensor_temperature")
+        fps = telemetry.get("fps")
+        gain = telemetry.get("gain")
+        if temp is not None:
+            self.Status.Status_SensorTemp_Value.setText(f"{temp:.1f} °C")
+            self.Status.Meta_SensorTemp_Value.setText(f"{temp:.1f} °C")
+        if fps is not None:
+            self.Status.Status_FPS_Value.setText(f"{fps:.1f}")
+        if gain is not None:
+            self.Status.Meta_Gain_Value.setText(f"{gain}")
+
+
     def __Save_HSI_Cube(self):
         if (self.cube is None or self.cube_path is None):
             QMessageBox.warning(self, "Save HSI Cube", "No HSI cube is available.")
             return
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save HSI Cube", "hsi_cube.npy", "Numpy Cube (*.npy)")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_name = f"HSI_Cube_{timestamp}.npy"
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save HSI Cube", default_name, "Numpy Cube (*.npy)")
         if not file_path:
             return
         if not file_path.lower().endswith(".npy"):
@@ -1189,9 +1246,9 @@ class StatusWidgets(QWidget):
 
         self.Band1_Slider = QRangeSlider()
         self.Band1_L_Spinbox = QDoubleSpinBox()
-        self.Band1_L_Spinbox.setDecimals(1)
+        self.Band1_L_Spinbox.setDecimals(0)
         self.Band1_R_Spinbox = QDoubleSpinBox()
-        self.Band1_R_Spinbox.setDecimals(1)
+        self.Band1_R_Spinbox.setDecimals(0)
 
 
         Uqt.SliderHelper._init_range_slider(self.Band1_Slider, self.Band1_L_Spinbox, self.Band1_R_Spinbox, 0, 639, 1)

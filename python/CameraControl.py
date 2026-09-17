@@ -64,6 +64,20 @@ class Controller:
 
         self.camera.set_target_temperature(temperature_c)
 
+    def Get_Telemetry(self):
+        mode = self.camera.get_detector_mode()
+        try:
+            gain = self.camera.get_detector_mode_property_value(mode, pecamerapy.PROP_GAIN)
+        except Exception:
+            gain = None
+
+        return {"sensor_temperature": self.camera.get_temperature(),
+                "fps": self.camera.get_frame_rate(),
+                "exposure_time": self.camera.get_exposure_time(),
+                "gain": gain}
+
+
+
 # import CameraControl
 # import pecamerapy
 # cam = pecamerapy.Camera()
