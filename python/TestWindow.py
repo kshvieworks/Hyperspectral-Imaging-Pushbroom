@@ -147,9 +147,10 @@ class HSIWindow(QWidget):
     def EventProcess(self):
         self.Config.camera_connect_requested.connect(self.Connect_Camera)
         self.Config.camera_disconnect_requested.connect(self.Disconnect_Camera)
-        self.Config.SpectrumY_Spinbox.valueChanged.connect(self.__Spectrum_Position_Changed)
-        self.ImagePreview.spectrum_position_selected.connect(self.Config.SpectrumY_Spinbox.setValue)
-        self.ImagePreview.Preview_Mode_Button.toggled.connect(lambda: self.__Update_Preview())
+        self.Config.SpectrumX_Spinbox.valueChanged.connect(lambda _: self.__Spectrum_Position_Changed())
+        self.Config.SpectrumY_Spinbox.valueChanged.connect(lambda _: self.__Spectrum_Position_Changed())
+        self.ImagePreview.spectrum_position_selected.connect(self.__Image_Spectrum_Position_Selected)
+        self.ImagePreview.Preview_Mode_Button.toggled.connect(lambda _: self.__Preview_Mode_Changed())
         self.Config.stage_connect_requested.connect(self.stage_worker.connect_stage)
         self.Config.stage_disconnect_requested.connect(self.stage_worker.disconnect_stage)
 
@@ -320,6 +321,11 @@ class HSIWindow(QWidget):
         self.Config.Start_Acquisition_Button.setEnabled(True)
         self.Config.Start_Acquisition_Button.setText("Start Cube Acquisition")
 
+    def __Preview_Mode_Changed(self):
+        self.__Update_Preview()
+        self.__Update_Spectrum_Range()
+        self.__Update_Spectrum()
+
     def __Update_Preview(self):
         show_frame = self.ImagePreview.Preview_Mode_Button.isChecked()
         if show_frame:
@@ -378,7 +384,7 @@ class HSIWindow(QWidget):
 
         self.latest_camera_image = image
         self.__Update_Metadata(metadata)
-        self.__Update_Spectrum_Range(image)
+        self.__Update_Spectrum_Range()
         self.__Update_Preview()
         # self.ImagePreview.Update_Preview(latest_image)
         self.__Update_Spectrum()
@@ -474,7 +480,7 @@ class HSIWindow(QWidget):
         image, metadata = latest_packet
         self.latest_camera_image = image
         self.__Update_Metadata(metadata)
-        self.__Update_Spectrum_Range(image)
+        self.__Update_Spectrum_Range()
         self.__Update_Preview()
         # self.ImagePreview.Update_Preview(latest_image)
         self.__Update_Spectrum()
@@ -510,25 +516,63 @@ class HSIWindow(QWidget):
         if (self.camera_process is not None and not self.camera_process.is_alive()):
             self._Camera_Process_Finished()
 
-    @pyqtSlot(int)
-    def __Spectrum_Position_Changed(self, position):
+    @pyqtSlot()
+    def __Spectrum_Position_Changed(self):
         self.__Update_Spectrum()
 
+    @pyqtSlot(bool, int, int)
+    def __Image_Spectrum_Position_Selected(self, preview_mode, x, y):
+        if preview_mode:
+            self.Config.SpectrumY_Spinbox.setValue(y)
+        else:
+            self.Config.SpectrumX_Spinbox.setValue(x)
+            self.Config.SpectrumY_Spinbox.setValue(y)
+
     def __Update_Spectrum(self):
-        image = self.latest_camera_image
+        preview_mode = self.ImagePreview.Preview_Mode_Button.isChecked()
 
-        if image is None:
-            return
+        # ---------------------
+        # Camera Preview Mode
+        # ---------------------
 
-        if image.ndim != 2:
-            return
+        if preview_mode:
+            image = self.latest_camera_image
 
-        spatial_size = image.shape[0]
-        spectral_size = image.shape[1]
+            if image is None:
+                return
 
-        position = self.Config.SpectrumY_Spinbox.value()
-        position = np.clip(position, 0, spatial_size - 1)
-        intensity = image[int(position), :].astype(np.float32)
+            if image.ndim != 2:
+                return
+
+            spatial_size = image.shape[0]
+            spectral_size = image.shape[1]
+
+            position = self.Config.SpectrumY_Spinbox.value()
+            position = np.clip(position, 0, spatial_size - 1)
+            intensity = image[int(position), :].astype(np.float32)
+
+        # ---------------------
+        # Cube Image Mode
+        # ---------------------
+        else:
+            if (self.acquisition_process is not None and self.live_cube is not None and self.live_band_lines >0):
+                cube = self.live_cube[:self.live_band_lines]
+            elif self.cube is not None:
+                cube = self.cube
+            else:
+                return
+
+            x = self.Config.SpectrumX_Spinbox.value()
+            y = self.Config.SpectrumY_Spinbox.value()
+
+            scan_size = cube.shape[0]
+            spatial_size = cube.shape[1]
+            spectral_size = cube.shape[2]
+
+            x = int(np.clip(x, 0, scan_size-1))
+            y = int(np.clip(y, 0, spatial_size-1))
+
+            intensity = cube[x, y, :].astype(np.float32)
 
         if (self.wavelength_range is not None and len(self.wavelength_range) == spectral_size and self.calibration_enabled):
             x_axis = self.wavelength_range
@@ -539,12 +583,39 @@ class HSIWindow(QWidget):
 
         self.SpectrumPreview.set_spectrum(x_axis, intensity)
 
-    def __Update_Spectrum_Range(self, image:np.ndarray):
-        spatial_max = image.shape[0] - 1
+    def __Update_Spectrum_Range(self):
 
-        if (self.Config.SpectrumY_Spinbox.maximum() != spatial_max):
-            self.Config.SpectrumY_Spinbox.setMaximum(spatial_max)
-            self.Config.SpectrumY_Slider.setMaximum(spatial_max)
+        preview_mode = self.ImagePreview.Preview_Mode_Button.isChecked()
+
+        if preview_mode:
+            image = self.latest_camera_image
+            if image is None:
+                return
+
+            y_max = image.shape[0] - 1
+            self.Config.SpectrumY_Spinbox.setMaximum(y_max)
+            self.Config.SpectrumY_Slider.setMaximum(y_max)
+            self.Config.SpectrumX_Spinbox.setEnabled(False)
+            self.Config.SpectrumX_Slider.setEnabled(False)
+
+        else:
+            if (self.acquisition_process is not None and self.live_cube is not None):
+                cube = self.live_cube[:self.live_band_lines]
+            elif self.cube is not None:
+                cube = self.cube
+            else:
+                return
+
+            x_max = cube.shape[0] - 1
+            y_max = cube.shape[1] - 1
+            self.Config.SpectrumX_Spinbox.setMaximum(x_max)
+            self.Config.SpectrumX_Slider.setMaximum(x_max)
+            self.Config.SpectrumY_Spinbox.setMaximum(y_max)
+            self.Config.SpectrumY_Slider.setMaximum(y_max)
+            self.Config.SpectrumX_Spinbox.setEnabled(True)
+            self.Config.SpectrumX_Slider.setEnabled(True)
+
+
 
     def __Update_Live_Band_Image(self):
         if (self.live_cube is None or self.live_band_lines <= 0):
@@ -795,7 +866,8 @@ class ConfigWidget(QWidget):
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Acquisition Setting')
 
         Temp_Layout = QVBoxLayout()
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.ROI_Prompt, self.ROI_L_Spinbox, self.ROI_Slider, self.ROI_R_Spinbox), 'Horizontal'))
+        # Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.ROI_Prompt, self.ROI_L_Spinbox, self.ROI_Slider, self.ROI_R_Spinbox), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.SpectrumX_Prompt, self.SpectrumX_Slider, self.SpectrumX_Spinbox), 'Horizontal'))
         Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.SpectrumY_Prompt, self.SpectrumY_Slider, self.SpectrumY_Spinbox), 'Horizontal'))
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'Spectrum Settings')
 
@@ -870,21 +942,31 @@ class ConfigWidget(QWidget):
         # self.Gain_Combo.addItems(["Free Run", "Software", "External"])
 
     # UI for Preview Configuration
-        self.ROI_Prompt = QLabel("ROI")
-        self.ROI_Prompt.setFixedSize(*LabelSize)
-        self.ROI_Slider = QRangeSlider()
-        self.ROI_Slider.setOrientation(Qt.Orientation.Horizontal)
-        self.ROI_Slider.setRange(0, 511)
-        self.ROI_Slider.setValue((0, 511))
-        self.ROI_Slider.setSingleStep(1)
-        self.ROI_L_Spinbox = QSpinBox()
-        self.ROI_L_Spinbox.setRange(0, 511)
-        self.ROI_L_Spinbox.setValue(0)
-        self.ROI_R_Spinbox = QSpinBox()
-        self.ROI_R_Spinbox.setRange(0, 511)
-        self.ROI_R_Spinbox.setValue(511)
+    #     self.ROI_Prompt = QLabel("ROI")
+    #     self.ROI_Prompt.setFixedSize(*LabelSize)
+    #     self.ROI_Slider = QRangeSlider()
+    #     self.ROI_Slider.setOrientation(Qt.Orientation.Horizontal)
+    #     self.ROI_Slider.setRange(0, 511)
+    #     self.ROI_Slider.setValue((0, 511))
+    #     self.ROI_Slider.setSingleStep(1)
+    #     self.ROI_L_Spinbox = QSpinBox()
+    #     self.ROI_L_Spinbox.setRange(0, 511)
+    #     self.ROI_L_Spinbox.setValue(0)
+    #     self.ROI_R_Spinbox = QSpinBox()
+    #     self.ROI_R_Spinbox.setRange(0, 511)
+    #     self.ROI_R_Spinbox.setValue(511)
 
-        self.SpectrumY_Prompt = QLabel("Spectrum Position")
+        self.SpectrumX_Prompt = QLabel("Scan Position, x")
+        self.SpectrumX_Prompt.setFixedSize(*LabelSize)
+        self.SpectrumX_Spinbox = QSpinBox()
+        self.SpectrumX_Spinbox.setRange(0, 1)
+        self.SpectrumX_Spinbox.setValue(0)
+        self.SpectrumX_Slider = QSlider(Qt.Orientation.Horizontal)
+        self.SpectrumX_Slider.setRange(0, 1)
+        self.SpectrumX_Slider.setSingleStep(1)
+        self.SpectrumX_Slider.setValue(0)
+
+        self.SpectrumY_Prompt = QLabel("Spatial Position, y")
         self.SpectrumY_Prompt.setFixedSize(*LabelSize)
         self.SpectrumY_Spinbox = QSpinBox()
         self.SpectrumY_Spinbox.setRange(0, 511)
@@ -951,9 +1033,11 @@ class ConfigWidget(QWidget):
     def EventProcess(self):
 
         self.Connection_Button.clicked.connect(self.CameraConnection_Event)
-        self.ROI_L_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(value, self.ROI_Slider.value()[1], self.ROI_Slider))
-        self.ROI_R_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(self.ROI_Slider.value()[0], value, self.ROI_Slider))
-        self.ROI_Slider.valueChanged.connect(lambda values: Uqt.SliderHelper.RangeSliderChanged(self.ROI_L_Spinbox, self.ROI_R_Spinbox, values))
+        # self.ROI_L_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(value, self.ROI_Slider.value()[1], self.ROI_Slider))
+        # self.ROI_R_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(self.ROI_Slider.value()[0], value, self.ROI_Slider))
+        # self.ROI_Slider.valueChanged.connect(lambda values: Uqt.SliderHelper.RangeSliderChanged(self.ROI_L_Spinbox, self.ROI_R_Spinbox, values))
+        self.SpectrumX_Slider.valueChanged.connect(self.SpectrumX_Spinbox.setValue)
+        self.SpectrumX_Spinbox.valueChanged.connect(self.SpectrumX_Slider.setValue)
         self.SpectrumY_Slider.valueChanged.connect(self.SpectrumY_Spinbox.setValue)
         self.SpectrumY_Spinbox.valueChanged.connect(self.SpectrumY_Slider.setValue)
 
@@ -1026,7 +1110,7 @@ class ConfigWidget(QWidget):
 
 class ImagePreviewWidgets(QWidget):
 
-    spectrum_position_selected = pyqtSignal(int)
+    spectrum_position_selected = pyqtSignal(bool, int, int)
 
     def __init__(self, parent=None):
         super(ImagePreviewWidgets, self).__init__(parent)
@@ -1114,7 +1198,8 @@ class ImagePreviewWidgets(QWidget):
             self.Preview_Mode_Button.setText("Cube Image Mode")
 
     def __Image_Clicked(self, x, y):
-        self.spectrum_position_selected.emit(y)
+        preview_mode = self.Preview_Mode_Button.isChecked()
+        self.spectrum_position_selected.emit(preview_mode, x, y)
 
 
 class SpectrumPreviewWidgets(QWidget):
