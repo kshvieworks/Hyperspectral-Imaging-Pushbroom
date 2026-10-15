@@ -168,7 +168,7 @@ class HSIWindow(QWidget):
         self.ImagePreview.save_preview_requested.connect(self.__Save_Preview_Image)
         self.ImagePreview.dark_file_requested.connect(lambda: self.__Load_Correction_File("dark"))
         self.ImagePreview.flat_file_requested.connect(lambda: self.__Load_Correction_File("flat"))
-        self.ImagePreview.correction_state_changed.connect(lambda: self.__Correction_State_Changed)
+        self.ImagePreview.correction_state_changed.connect(self.__Correction_State_Changed)
         self.Config.stage_connect_requested.connect(self.stage_worker.connect_stage)
         self.Config.stage_disconnect_requested.connect(self.stage_worker.disconnect_stage)
 
@@ -425,8 +425,8 @@ class HSIWindow(QWidget):
             return data
 
         result = np.asarray(data, dtype=np.float32).copy()
-        dark = self.dark.copy()
-        flat = self.flat.copy()
+        dark = self.dark
+        flat = self.flat
 
         if band_range is not None:
             left, right = band_range
@@ -440,8 +440,6 @@ class HSIWindow(QWidget):
             result *= flat
 
         return result
-
-
 
     def __Preview_Mode_Changed(self):
         self.__Update_Preview()
@@ -484,8 +482,10 @@ class HSIWindow(QWidget):
         if selected is None:
             return None
 
+        selected =self.__Apply_Correction(selected, band_range)
+
         band_left, band_right = band_range
-        preview = np.zeros_like(image)
+        preview = np.zeros(image.shape, dtype=selected.dtype)
         preview[..., band_left:band_right+1] = selected
         return preview
 
@@ -671,7 +671,7 @@ class HSIWindow(QWidget):
 
             position = self.Config.SpectrumY_Spinbox.value()
             position = np.clip(position, 0, spatial_size - 1)
-            intensity = image[int(position), :].astype(np.float32)
+            intensity = self.__Apply_Spectrum_Correction(image[int(position), :], int(position))
 
         # ---------------------
         # Cube Image Mode
@@ -753,6 +753,7 @@ class HSIWindow(QWidget):
             return
         current_cube = self.live_cube[:self.live_band_lines]
         band_cube, band_range = self.__Select_Band_Range(current_cube)
+        band_cube = self.__Apply_Correction(band_cube, band_range)
         band_image = np.mean(band_cube, axis=-1, dtype=np.float32)
         self.live_band_image = np.ascontiguousarray(band_image.T)
         self.live_band_index = band_range
