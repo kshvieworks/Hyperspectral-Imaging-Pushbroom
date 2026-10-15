@@ -2,6 +2,9 @@
 Pushbroom HSI User Interface using PyQt
 """
 import os
+
+from pyqtgraph.parametertree.parameterTypes import file
+
 os.environ["QT_API"] = "pyqt6"
 
 import pecamerapy
@@ -104,6 +107,17 @@ class HSIWindow(QWidget):
         self.live_band_index = None
         self.live_band_lines = 0
 
+    # Correction Images
+        self.dark_frame = None
+        self.flat_frame = None
+        self.dark_enabled = False
+        self.flat_enabled = False
+        self.dark_path = None
+        self.flat_path = None
+        self.dark = None
+        self.flat = None
+
+
     # Spectral Calibration
         self.calibration_enabled = False
         self.wavelength_range = None
@@ -151,6 +165,10 @@ class HSIWindow(QWidget):
         self.Config.SpectrumY_Spinbox.valueChanged.connect(lambda _: self.__Spectrum_Position_Changed())
         self.ImagePreview.spectrum_position_selected.connect(self.__Image_Spectrum_Position_Selected)
         self.ImagePreview.Preview_Mode_Button.toggled.connect(lambda _: self.__Preview_Mode_Changed())
+        self.ImagePreview.save_preview_requested.connect(self.__Save_Preview_Image)
+        self.ImagePreview.dark_file_requested.connect(lambda: self.__Load_Correction_File("dark"))
+        self.ImagePreview.flat_file_requested.connect(lambda: self.__Load_Correction_File("flat"))
+        self.ImagePreview.correction_state_changed.connect(lambda: self.__Correction_State_Changed)
         self.Config.stage_connect_requested.connect(self.stage_worker.connect_stage)
         self.Config.stage_disconnect_requested.connect(self.stage_worker.disconnect_stage)
 
@@ -320,6 +338,110 @@ class HSIWindow(QWidget):
 
         self.Config.Start_Acquisition_Button.setEnabled(True)
         self.Config.Start_Acquisition_Button.setText("Start Cube Acquisition")
+
+    def __Save_Preview_Image(self):
+        if self.latest_camera_image is None:
+            QMessageBox.warning(self, "Save Preview", "No preview image is available")
+            return
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        default_name = f"HSI_Frame_{timestamp}.npy"
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save Preview", default_name, "Numpy Image (*.npy)")
+
+        if not file_path:
+            return
+        if not file_path.lower().endswith(".npy"):
+            file_path += ".npy"
+
+        np.save(file_path, self.latest_camera_image)
+
+    def __Load_Correction_File(self, file_type):
+        path, _ = QFileDialog.getOpenFileName(self, f"Select {file_type} File", "", "NumPy Image (*.npy)")
+        if not path:
+            return
+        try:
+            image = np.load(path)
+            if image.ndim != 2:
+                raise ValueError("Correction Image must be 2D Image")
+
+            if ((self.latest_camera_image is not None) and (self.latest_camera_image.shape != image.shape)):
+                raise ValueError(f"Correction image shape {image.shape} does not match camera image {self.latest_camera_image.shape}")
+            image = np.asarray(image, dtype=np.float32)
+
+            if file_type == "dark":
+                self.dark_frame = image
+                self.dark_path = path
+                self.ImagePreview.DarkPath_BTN.setText("Dark ✔")
+                self.ImagePreview.DarkPath_BTN.setToolTip(path)
+
+            elif file_type == "flat":
+                self.flat_frame = image
+                self.flat_path = path
+                self.ImagePreview.FlatPath_BTN.setText("Flat ✔")
+                self.ImagePreview.FlatPath_BTN.setToolTip(path)
+
+            self.__Update_Correction_Model()
+        except Exception as e:
+            QMessageBox.critical(self, "Correction File Error", f"{type(e).__name__}: {e}")
+
+    @pyqtSlot(bool, bool)
+    def __Correction_State_Changed(self, dark_enabled, flat_enabled):
+        self.__Update_Correction_Model()
+        if (self.ImagePreview.Preview_Mode_Button.isChecked()):
+            self.__Update_Preview()
+        elif (self.acquisition_process is not None and self.live_cube is not None):
+            self.__Update_Live_Band_Image()
+        elif self.cube is not None:
+            self.__Update_Band_Image()
+        self.__Update_Spectrum()
+
+    def __Update_Correction_Model(self):
+
+        self.flat = None
+
+        dark_activate = (self.ImagePreview.Dark_Enable_Checkbox.isChecked() and self.dark_frame is not None)
+        flat_activate = (self.ImagePreview.Flat_Enable_Checkbox.isChecked() and self.flat_frame is not None)
+
+        self.dark = self.dark_frame if dark_activate else None
+
+        if flat_activate:
+            flat_reference = self.flat_frame.copy()
+            if dark_activate:
+                flat_reference -= self.dark
+
+            threshold = max(1.0, 0.01*float(np.nanpercentile(flat_reference, 95)))
+            valid = flat_reference > threshold
+
+            if np.any(valid):
+                normalization = float(np.mean(flat_reference[valid]))
+                flat = np.zeros_like(flat_reference, dtype=np.float32)
+                flat[valid] = normalization / flat_reference[valid]
+                self.flat = flat.copy()
+
+    def __Apply_Correction(self, data, band_range=None):
+        if data is None:
+            return None
+
+        if (self.dark is None and self.flat is None):
+            return data
+
+        result = np.asarray(data, dtype=np.float32).copy()
+        dark = self.dark.copy()
+        flat = self.flat.copy()
+
+        if band_range is not None:
+            left, right = band_range
+            if dark is not None:
+                dark = dark[:, left:right + 1]
+            if flat is not None:
+                flat = flat[:, left:right + 1]
+        if dark is not None:
+            result -= dark
+        if flat is not None:
+            result *= flat
+
+        return result
+
+
 
     def __Preview_Mode_Changed(self):
         self.__Update_Preview()
@@ -572,7 +694,7 @@ class HSIWindow(QWidget):
             x = int(np.clip(x, 0, scan_size-1))
             y = int(np.clip(y, 0, spatial_size-1))
 
-            intensity = cube[x, y, :].astype(np.float32)
+            intensity = self.__Apply_Spectrum_Correction(cube[x, y, :], y)
 
         if (self.wavelength_range is not None and len(self.wavelength_range) == spectral_size and self.calibration_enabled):
             x_axis = self.wavelength_range
@@ -582,6 +704,15 @@ class HSIWindow(QWidget):
             self.SpectrumPreview.set_x_axis_mode(False)
 
         self.SpectrumPreview.set_spectrum(x_axis, intensity)
+
+    def __Apply_Spectrum_Correction(self, spectrum, spatial_y):
+        result = np.asarray(spectrum, dtype=np.float32).copy()
+        if self.dark is not None:
+            result -= self.dark[spatial_y, :]
+        if self.flat is not None:
+            result *= self.flat[spatial_y, :]
+
+        return result
 
     def __Update_Spectrum_Range(self):
 
@@ -628,7 +759,6 @@ class HSIWindow(QWidget):
         if not self.ImagePreview.Preview_Mode_Button.isChecked():
             self.__Update_Preview()
 
-
     def __Update_Band_Image(self):
         if self.cube is None:
             return
@@ -636,6 +766,7 @@ class HSIWindow(QWidget):
         band_cube, band_range = self.__Select_Band_Range(self.cube)
         if band_cube is None:
             return
+        band_cube = self.__Apply_Correction(band_cube, band_range)
 
         band_image = np.mean(band_cube, axis=-1, dtype=np.float32)
         self.live_band_image = np.ascontiguousarray(band_image.T)
@@ -1111,6 +1242,11 @@ class ConfigWidget(QWidget):
 class ImagePreviewWidgets(QWidget):
 
     spectrum_position_selected = pyqtSignal(bool, int, int)
+    save_preview_requested = pyqtSignal()
+    dark_file_requested = pyqtSignal()
+    flat_file_requested = pyqtSignal()
+
+    correction_state_changed = pyqtSignal(bool, bool)
 
     def __init__(self, parent=None):
         super(ImagePreviewWidgets, self).__init__(parent)
@@ -1130,13 +1266,24 @@ class ImagePreviewWidgets(QWidget):
 
     def UI_Layout(self, Layout):
 
-        Layout.addWidget(self.Preview_Mode_Button, alignment = Qt.AlignmentFlag.AlignRight)
+        Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Dark_Enable_Checkbox,self.DarkPath_BTN,self.Flat_Enable_Checkbox,
+                                                         self.FlatPath_BTN,self.Save_Preview_Button, self.Preview_Mode_Button),'Horizontal'))
 
         self.PreviewLabel.setAlignment(Qt.AlignmentFlag.AlignCenter)
         Layout.addWidget(self.PreviewLabel)
         Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.CRange_L_Spinbox, self.ColorRange_Slider, self.CRange_R_Spinbox), 'Horizontal'))
 
     def UI_Component(self):
+
+        self.Dark_Enable_Checkbox = QCheckBox()
+        self.Dark_Enable_Checkbox.setChecked(False)
+        self.DarkPath_BTN = QPushButton("Dark File...")
+
+        self.Flat_Enable_Checkbox = QCheckBox()
+        self.Flat_Enable_Checkbox.setChecked(False)
+        self.FlatPath_BTN = QPushButton("Flat...")
+
+        self.Save_Preview_Button = QPushButton("Save Preview")
 
         self.Preview_Mode_Button = QPushButton("Camera Preview Mode")
         self.Preview_Mode_Button.setCheckable(True)
@@ -1162,6 +1309,11 @@ class ImagePreviewWidgets(QWidget):
 
     def EventProcess(self):
         self.Preview_Mode_Button.toggled.connect(self._Preview_Mode_Event)
+        self.Save_Preview_Button.clicked.connect(self.save_preview_requested.emit)
+        self.DarkPath_BTN.clicked.connect(self.dark_file_requested.emit)
+        self.FlatPath_BTN.clicked.connect(self.flat_file_requested.emit)
+        self.Dark_Enable_Checkbox.toggled.connect(self.__Correction_State_Changed)
+        self.Flat_Enable_Checkbox.toggled.connect(self.__Correction_State_Changed)
         self.ColorRange_Slider.valueChanged.connect(self.Update_Display)
         self.PreviewLabel.pixel_clicked.connect(self.__Image_Clicked)
         self.CRange_L_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(value, self.ColorRange_Slider.value()[1], self.ColorRange_Slider))
@@ -1200,6 +1352,9 @@ class ImagePreviewWidgets(QWidget):
     def __Image_Clicked(self, x, y):
         preview_mode = self.Preview_Mode_Button.isChecked()
         self.spectrum_position_selected.emit(preview_mode, x, y)
+
+    def __Correction_State_Changed(self):
+        self.correction_state_changed.emit(self.Dark_Enable_Checkbox.isChecked(), self.Flat_Enable_Checkbox.isChecked())
 
 
 class SpectrumPreviewWidgets(QWidget):
