@@ -117,6 +117,8 @@ class HSIWindow(QWidget):
         self.dark = None
         self.flat = None
 
+    # ROI
+        self.roi = None
 
     # Spectral Calibration
         self.calibration_enabled = False
@@ -164,6 +166,7 @@ class HSIWindow(QWidget):
         self.Config.SpectrumX_Spinbox.valueChanged.connect(lambda _: self.__Spectrum_Position_Changed())
         self.Config.SpectrumY_Spinbox.valueChanged.connect(lambda _: self.__Spectrum_Position_Changed())
         self.ImagePreview.spectrum_position_selected.connect(self.__Image_Spectrum_Position_Selected)
+        self.ImagePreview.roi_selected.connect(self.__Image_ROI_Selected)
         self.ImagePreview.Preview_Mode_Button.toggled.connect(lambda _: self.__Preview_Mode_Changed())
         self.ImagePreview.save_preview_requested.connect(self.__Save_Preview_Image)
         self.ImagePreview.dark_file_requested.connect(lambda: self.__Load_Correction_File("dark"))
@@ -644,11 +647,58 @@ class HSIWindow(QWidget):
 
     @pyqtSlot(bool, int, int)
     def __Image_Spectrum_Position_Selected(self, preview_mode, x, y):
+        self.roi = None
+        self.ImagePreview.PreviewLabel.clear_roi()
+
         if preview_mode:
             self.Config.SpectrumY_Spinbox.setValue(y)
         else:
             self.Config.SpectrumX_Spinbox.setValue(x)
             self.Config.SpectrumY_Spinbox.setValue(y)
+
+    @pyqtSlot(bool, int, int, int, int)
+    def __Image_ROI_Selected(self, preview_mode, x0, y0, x1, y1):
+        if preview_mode:
+            return
+        self.roi = (x0, y0, x1, y1)
+        self.__Update_ROI_Spectrum()
+
+    def __Update_ROI_Spectrum(self):
+        if self.roi is None:
+            return
+        cube = self.__Get_Current_Cube()
+        if cube is None:
+            return
+        x0, y0, x1, y1 = self.roi
+        x0 = int(np.clip(x0, 0, cube.shape[0] - 1))
+        x1 = int(np.clip(x1, x0, cube.shape[0] - 1))
+        y0 = int(np.clip(y0, 0, cube.shape[1] - 1))
+        y1 = int(np.clip(y1, y0, cube.shape[1] - 1))
+        roi_cube = np.asarray(cube[x0:x1+1, y0:y1+1], dtype=np.float32)
+
+        if self.dark is not None:
+            roi_cube -= self.dark[y0:y1 +1, :][None, :, :]
+        if self.flat is not None:
+            roi_cube *= self.flat[y0:y1 +1, :][None, :, :]
+
+        mean_spectrum = np.mean(roi_cube, axis=(0, 1))
+
+        spectral_size = mean_spectrum.size
+        if (self.calibration_enabled and self.wavelength_range is not None and len(self.wavelength_range) == spectral_size):
+            x_axis = self.wavelength_range
+            self.SpectrumPreview.set_x_axis_mode(True)
+        else:
+            x_axis = np.arange(spectral_size)
+            self.SpectrumPreview.set_x_axis_mode(False)
+
+        self.SpectrumPreview.set_spectrum(x_axis, mean_spectrum)
+
+    def __Get_Current_Cube(self):
+        if (self.acquisition_process is not None and self.live_cube is not None and self.live_band_lines > 0):
+            return self.live_cube[:self.live_band_lines]
+        if self.cube is not None:
+            return self.cube
+        return None
 
     def __Update_Spectrum(self):
         preview_mode = self.ImagePreview.Preview_Mode_Button.isChecked()
@@ -1243,6 +1293,7 @@ class ConfigWidget(QWidget):
 class ImagePreviewWidgets(QWidget):
 
     spectrum_position_selected = pyqtSignal(bool, int, int)
+    roi_selected = pyqtSignal(bool, int, int, int, int)
     save_preview_requested = pyqtSignal()
     dark_file_requested = pyqtSignal()
     flat_file_requested = pyqtSignal()
@@ -1317,10 +1368,10 @@ class ImagePreviewWidgets(QWidget):
         self.Flat_Enable_Checkbox.toggled.connect(self.__Correction_State_Changed)
         self.ColorRange_Slider.valueChanged.connect(self.Update_Display)
         self.PreviewLabel.pixel_clicked.connect(self.__Image_Clicked)
+        self.PreviewLabel.roi_selected.connect(self.__ROI_Selected)
         self.CRange_L_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(value, self.ColorRange_Slider.value()[1], self.ColorRange_Slider))
         self.CRange_R_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(self.ColorRange_Slider.value()[0], value, self.ColorRange_Slider))
         self.ColorRange_Slider.valueChanged.connect(lambda values: Uqt.SliderHelper.RangeSliderChanged(self.CRange_L_Spinbox, self.CRange_R_Spinbox, values))
-
 
     def Update_Preview(self, Image, align_left=False):
 
@@ -1353,6 +1404,10 @@ class ImagePreviewWidgets(QWidget):
     def __Image_Clicked(self, x, y):
         preview_mode = self.Preview_Mode_Button.isChecked()
         self.spectrum_position_selected.emit(preview_mode, x, y)
+
+    def __ROI_Selected(self, x0, y0, x1, y1):
+        preview_mode = self.Preview_Mode_Button.isChecked()
+        self.roi_selected.emit(preview_mode, x0, y0, x1, y1)
 
     def __Correction_State_Changed(self):
         self.correction_state_changed.emit(self.Dark_Enable_Checkbox.isChecked(), self.Flat_Enable_Checkbox.isChecked())

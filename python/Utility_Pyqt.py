@@ -2,9 +2,9 @@ import numpy as np
 import imageio
 from PyQt6 import QtGui
 from PyQt6 import QtWidgets
-from PyQt6.QtWidgets import QApplication, QFileDialog, QLabel, QSpinBox
+from PyQt6.QtWidgets import QApplication, QFileDialog, QLabel, QSpinBox, QRubberBand
 from PyQt6 import QtCore
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QRect, QPoint, QSize
 
 import cv2
 import os
@@ -230,14 +230,73 @@ class SliderHelper:
 
 class ClickableImageLabel(QLabel):
     pixel_clicked = QtCore.pyqtSignal(int, int)
+    roi_selected = QtCore.pyqtSignal(int, int, int, int)
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.image_shape = None
 
+        self.drag_start = None
+        self.dragging = False
+        self.rubber_band = QRubberBand(QRubberBand.Shape.Rectangle, self)
+
     def set_image_shape(self, shape):
         self.image_shape = shape
 
+    def clear_roi(self):
+        self.drag_start = None
+        self.rubber_band.hide()
+
     def mousePressEvent(self, event):
+        if (event.button() != QtCore.Qt.MouseButton.LeftButton):
+            return
+
+        position = self._Label_to_Image(event.position().x(), event.position().y())
+
+        if position is None:
+            return
+
+        self.drag_start = event.position().toPoint()
+        self.dragging = False
+        self.rubber_band.setGeometry(QRect(self.drag_start, QSize()))
+        self.rubber_band.show()
+
+    def mouseMoveEvent(self, event):
+        if self.drag_start is None:
+            return
+        current = event.position().toPoint()
+        rect = QRect(self.drag_start, current).normalized()
+
+        if (rect.width() >= 3 or rect.height() >= 3):
+            self.dragging = True
+        self.rubber_band.setGeometry(rect)
+
+    def mouseReleaseEvent(self, event):
+        if self.drag_start is None:
+            return
+        end_point = event.position().toPoint()
+        start_image = self._Label_to_Image(self.drag_start.x(), self.drag_start.y())
+        end_image = self._Label_to_Image(end_point.x(), end_point.y())
+
+        if (start_image is None or end_image is None):
+            self.drag_start = None
+            self.rubber_band.hide()
+            return
+
+        x0, y0 = start_image
+        x1, y1 = end_image
+        if not self.dragging:
+            self.pixel_clicked.emit(x0, y0)
+            self.rubber_band.hide()
+        else:
+            x0, x1 = sorted((x0, x1))
+            y0, y1 = sorted((y0, y1))
+            self.roi_selected.emit(x0, y0, x1, y1)
+
+        self.drag_start = None
+        self.dragging = False
+
+    def _Label_to_Image(self, label_x, label_y):
 
         alignment = self.alignment()
 
@@ -265,8 +324,8 @@ class ClickableImageLabel(QLabel):
         else:
             y_offset = (label_h - pix_h) / 2
 
-        x = event.position().x() - x_offset
-        y = event.position().y() - y_offset
+        x = label_x - x_offset
+        y = label_y - y_offset
 
         if(x<0 or y<0 or x>=pix_w or y>=pix_h):
             return
@@ -275,7 +334,10 @@ class ClickableImageLabel(QLabel):
         image_x = int(x*image_w/pix_w)
         image_y = int(y*image_h/pix_h)
 
-        self.pixel_clicked.emit(image_x, image_y)
+        image_x = np.clip(image_x, 0, image_w-1)
+        image_y = np.clip(image_y, 0, image_h-1)
+
+        return (int(image_x), int(image_y))
 
 
 
