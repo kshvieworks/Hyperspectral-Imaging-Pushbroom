@@ -27,6 +27,7 @@ import Utility_Pushbroom as UP
 import shutil
 import uuid
 import psutil
+import json
 from datetime import datetime
 
 from pylablib.devices import Thorlabs
@@ -228,6 +229,26 @@ class HSIWindow(QWidget):
 
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         output_path = os.path.join(os.getcwd(), f"HSI_Cube_{timestamp}.npy")
+
+        self.Metadata = {"acquisition": {"timestamp": datetime.now().isoformat(),
+                                         "camera_serial": camera_serial,
+                                         "exposure_s": exposure,
+                                         "temperature_c": temperature,
+                                         "detector_mode": detector_mode},
+
+                         "stage": {"serial": stage_serial,
+                                   "speed_mm_s": stage_speed,
+                                   "start_mm": start_mm,
+                                   "end_mm": end_mm,
+                                   "step_mm": step_mm,
+                                   "settle_s": settle_s},
+
+                         "calibration": {"enabled": self.calibration_enabled,
+                                         "left_pixel": self.Status.Calibration_Wavelength_StartPixel_Spinbox.value(),
+                                         "left_wavelength_nm": self.Status.Calibration_Wavelength_Startwl_Spinbox.value(),
+                                         "right_pixel": self.Status.Calibration_Wavelength_EndPixel_Spinbox.value(),
+                                         "right_wavelength_nm": self.Status.Calibration_Wavelength_Endwl_Spinbox.value()}
+                         }
 
         self._Start_Acquisition_Process(camera_serial = camera_serial, stage_serial = stage_serial, exposure = exposure, temperature = temperature,
                                         detector_mode = detector_mode, stage_speed = stage_speed, start_mm = start_mm, end_mm = end_mm, step_mm = step_mm,
@@ -554,6 +575,13 @@ class HSIWindow(QWidget):
                         self.Status.Save_Button.setEnabled(True)
                         self.Status.Status_Camera_Value.setText("Idle")
                         self.Config.Start_Acquisition_Button.setText(str(data["lines"]))
+
+                        if self.Metadata is not None:
+                            self.Metadata['data'] = {"shape": [int(v) for v in self.cube.shape],
+                                                     'dtype': str(self.cube.dtype),
+                                                     'axis_order': ["scan", "spatial", "spectral"]}
+                        if self.wavelength_range is not None:
+                            self.acquisition_metadata["calibration"]["wavelength_axis_nm"] = self.wavelength_range.astype(float).tolist()
 
                     elif status == "aborted":
                         QMessageBox.warning(self, "Acquisition Aborted", f"Acquired lines: {data['lines']}")
@@ -993,6 +1021,7 @@ class HSIWindow(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Save HSI Cube", f"{type(e).__name__}: {e}")
 
+        self.__SaveMetadata(destination)
 
     # @pyqtSlot(object)
     # def __Receive_Camera_Image(self, image):
@@ -1004,8 +1033,17 @@ class HSIWindow(QWidget):
     #         return
     #     self.ImagePreview.Update_Preview(self.image)
 
-    def __SaveMetadata(self, metadata):
-        self.Metadata = None
+    def __SaveMetadata(self, destination):
+        metadata = dict(self.Metadata or {})
+        metadata["processing"] = {"cube_type": "raw",
+                                  "dark_enabled": self.ImagePreview.Dark_Enable_Checkbox.isChecked(),
+                                  "dark_file": self.dark_path,
+                                  "flat_enabled": self.ImagePreview.Flat_Enable_Checkbox.isChecked(),
+                                  "flat_file": self.flat_path}
+
+        json_path = os.path.splitext(destination)[0] + ".json"
+        with open(json_path, "w", encoding="utf-8") as f:
+            json.dump(metadata, f, indent=4, ensure_ascii=False)
 
 
 class ConfigWidget(QWidget):
