@@ -581,7 +581,7 @@ class HSIWindow(QWidget):
                                                      'dtype': str(self.cube.dtype),
                                                      'axis_order': ["scan", "spatial", "spectral"]}
                         if self.wavelength_range is not None:
-                            self.acquisition_metadata["calibration"]["wavelength_axis_nm"] = self.wavelength_range.astype(float).tolist()
+                            self.Metadata["calibration"]["wavelength_axis_nm"] = self.wavelength_range.astype(float).tolist()
 
                     elif status == "aborted":
                         QMessageBox.warning(self, "Acquisition Aborted", f"Acquired lines: {data['lines']}")
