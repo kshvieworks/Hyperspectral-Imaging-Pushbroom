@@ -55,8 +55,9 @@ class WidgetFunction:
         btn.setEnabled(checked)
 
     @staticmethod
-    def Open_File(caption = "Open File", directory = "", filter = ""):
-        # fd = os.getcwd()
+    def Open_File(caption = "Open File", directory = "", filter = "All Files (*)"):
+        if not directory:
+            directory = os.getcwd()
 
         filepath, _ = QFileDialog.getOpenFileName(parent=None, caption=caption, directory=directory, filter = filter)
         return filepath

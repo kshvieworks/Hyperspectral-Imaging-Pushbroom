@@ -116,6 +116,7 @@ class CubeAnalyzerWindow(QWidget):
 
     def init_Status(self, Layout):
         self.Status = StatusWidgets()
+        self.Status.Save_Button.hide()
         Layout.addWidget(self.Status)
 
     def EventProcess(self):
@@ -125,8 +126,8 @@ class CubeAnalyzerWindow(QWidget):
 
         self.Dark_Button.clicked.connect(lambda: self.__Load_Correction_File("dark"))
         self.Flat_Button.clicked.connect(lambda: self.__Load_Correction_File("flat"))
-        self.Dark_Enable_Checkbox.toggled.connect(self.__Correction_State_Changed)
-        self.Flat_Enable_Checkbox.toggled.connect(self.__Correction_State_Changed)
+        self.Dark_Enable_Checkbox.toggled.connect(lambda _: self.__Correction_State_Changed())
+        self.Flat_Enable_Checkbox.toggled.connect(lambda _: self.__Correction_State_Changed())
 
         self.ImagePreview.spectrum_position_selected.connect(self.__Image_Spectrum_Position_Selected)
         self.ImagePreview.roi_selected.connect(self.__Image_ROI_Selected)
@@ -139,7 +140,7 @@ class CubeAnalyzerWindow(QWidget):
         self.Status.Band1_Slider.valueChanged.connect(self.__Band_Slider_Changed)
         self.Status.Band1_L_Spinbox.editingFinished.connect(self.__Band_Spinbox_Changed)
         self.Status.Band1_R_Spinbox.editingFinished.connect(self.__Band_Spinbox_Changed)
-        self.Status.Save_Button.clicked.connect(self.__Save_HSI_Cube)
+        # self.Status.Save_Button.clicked.connect(self.__Save_HSI_Cube)
 
     def __Load_Cube(self):
         path = Uqt.WidgetFunction.Open_File(caption = "Load HSI Cube", directory = "", filter = "Numpy Cube (*.npy)")
@@ -165,7 +166,9 @@ class CubeAnalyzerWindow(QWidget):
             self.Status.Band1_Slider.setValue((0, spectral_size - 1))
 
             self.Status.Calibration_Wavelength_StartPixel_Spinbox.setMaximum(spectral_size - 1)
+            self.Status.Calibration_Wavelength_EndPixel_Spinbox.setMaximum(spectral_size - 1)
             self.__Update_Band_Image()
+            self.__Update_Spectrum()
             self.Cube_Button.setText("Cube ✔")
             self.Cube_Button.setToolTip(path)
 
@@ -180,7 +183,7 @@ class CubeAnalyzerWindow(QWidget):
             with open(path, "r", encoding = "utf-8") as f:
                 metadata = json.load(f)
             self.Metadata = metadata
-            self.metadata = path
+            self.metadata_path = path
             self.__Update_Metadata()
 
             self.Metadata_Button.setText("Metadata ✔")
@@ -189,6 +192,13 @@ class CubeAnalyzerWindow(QWidget):
             QMessageBox.critical(self, "Metadata Error", f"{type(e).__name__}: {e}")
 
     def __Load_Correction_File(self, file_type):
+
+        if self.cube is None:
+            QMessageBox.warning(self, "Correction File", "Please load a cube first")
+            return
+
+        expected_shape = (self.cube.shape[1], self.cube.shape[2])
+
         path = Uqt.WidgetFunction.Open_File(caption = "Load Correction File", directory = "", filter = "NumPy Image (*.npy)")
 
         if not path:
@@ -197,7 +207,6 @@ class CubeAnalyzerWindow(QWidget):
             image = np.load(path)
             if image.ndim != 2:
                 raise ValueError("Correction Image must be 2D Image")
-            expected_shape = (self.cube.shape[1], self.cube.shape[2])
 
             if (self.cube is not None and image.shape != expected_shape):
                 raise ValueError(f"Correction image shape {image.shape} does not match cube frame shape {expected_shape}")
@@ -253,8 +262,11 @@ class CubeAnalyzerWindow(QWidget):
         if shape is not None:
             scan, spatial, spectral = shape
 
-        self.Status.Status_AcquiredFrames_Value.setText(f"{scan}")
-        self.Status.Meta_ImageSize_Value.setText(f"{spectral} × {spatial}")
+            self.Status.Status_AcquiredFrames_Value.setText(f"{scan}")
+            self.Status.Meta_ImageSize_Value.setText(f"{spectral} × {spatial}")
+        else:
+            self.Status.Status_AcquiredFrames_Value.setText("--")
+            self.Status.Meta_ImageSize_Value.setText("--")
 
         enabled = calibration.get("enabled", False)
         left_pixel = calibration.get("left_pixel")
@@ -304,6 +316,16 @@ class CubeAnalyzerWindow(QWidget):
         self.live_band_image = np.ascontiguousarray(band_image.T)
         self.live_band_index = band_range
         self.live_band_lines = self.cube.shape[0]
+
+        self.__Update_Preview()
+
+    def __Update_Preview(self):
+
+        if self.live_band_image is None:
+            return
+        image = self.live_band_image[:, :self.live_band_lines]
+        align_left = True
+        self.ImagePreview.Update_Preview(image, align_left = align_left)
 
     @pyqtSlot()
     def __Band_Range_Changed(self):
@@ -388,12 +410,15 @@ class CubeAnalyzerWindow(QWidget):
 
         return result
 
-    def __Correction_State_Changed(self, dark_enabled, flat_enabled):
+    def __Correction_State_Changed(self):
         self.__Update_Correction_Model()
 
         if self.cube is not None:
             self.__Update_Band_Image()
         self.__Update_Spectrum()
+
+        if self.roi is not None:
+            self.__Update_ROI_Spectrum()
 
     def __Update_Correction_Model(self):
 
@@ -478,6 +503,17 @@ class CubeAnalyzerWindow(QWidget):
         self.Status.Calibration_Wavelength_Value.setText(f"{self.wavelength_range[0]:.1f} - {self.wavelength_range[-1]:.1f} nm")
         self.__Update_Spectrum()
 
+    def __Pixel_To_Wavelength(self, pixel):
+        if self.wavelength_range is None:
+            return None
+        pixel = int(np.clip(pixel, 0, len(self.wavelength_range) - 1))
+        return float(self.wavelength_range[pixel])
+
+    def __Wavelength_To_Pixel(self, wavelength):
+        if self.wavelength_range is None:
+            return None
+        return int(np.argmin(np.abs(self.wavelength_range - wavelength)))
+
     @pyqtSlot(bool, int, int, int, int)
     def __Image_ROI_Selected(self, preview_mode, x0, y0, x1, y1):
 
@@ -530,27 +566,6 @@ class CubeAnalyzerWindow(QWidget):
         self.__Update_Band_Spinboxes()
         self.__Update_Spectrum()
 
-    def __Save_HSI_Cube(self):
-        if (self.cube is None or self.cube_path is None):
-            QMessageBox.warning(self, "Save HSI Cube", "No HSI cube is available.")
-            return
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        default_name = f"HSI_Cube_{timestamp}.npy"
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save HSI Cube", default_name, "Numpy Cube (*.npy)")
-        if not file_path:
-            return
-        if not file_path.lower().endswith(".npy"):
-            file_path += ".npy"
-        source = os.path.abspath(self.cube_path)
-        destination = os.path.abspath(file_path)
-        try:
-            if source != destination:
-                shutil.copy2(source, destination)
-            QMessageBox.information(self, "Save HSI Cube", f"Cube Saved \n {destination}")
-        except Exception as e:
-            QMessageBox.critical(self, "Save HSI Cube", f"{type(e).__name__}: {e}")
-
-        self.__SaveMetadata(destination)
 
 
 if __name__ == '__main__':
