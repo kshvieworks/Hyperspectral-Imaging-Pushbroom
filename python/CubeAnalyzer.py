@@ -1,16 +1,20 @@
 import json
-
 import numpy as np
+import shutil
+import sys
+import os
+from datetime import datetime
+os.environ["QT_API"] = "pyqt6"
 
 from TestWindow import ImagePreviewWidgets, SpectrumPreviewWidgets, StatusWidgets
 import multiprocessing as mp
 import sys
 
 from PyQt6.QtCore import pyqtSlot
-from PyQt6.QtWidgets import QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QCheckBox, QMessageBox
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QCheckBox,
+                             QMessageBox, QFileDialog)
 
 import Utility_Pyqt as Uqt
-
 
 
 class App(QMainWindow):
@@ -177,7 +181,7 @@ class CubeAnalyzerWindow(QWidget):
                 metadata = json.load(f)
             self.Metadata = metadata
             self.metadata = path
-            self.__Apply_Metadata()
+            self.__Update_Metadata()
 
             self.Metadata_Button.setText("Metadata ✔")
             self.Metadata_Button.setToolTip(path)
@@ -215,6 +219,16 @@ class CubeAnalyzerWindow(QWidget):
         except Exception as e:
             QMessageBox.critical(self, "Correction File Error", f"{type(e).__name__}: {e}")
 
+    def __Release_Cube(self):
+        if self.cube is not None:
+            if isinstance(self.cube, np.memmap):
+                mmap_object = getattr(self.cube, "_mmap", None)
+
+                if mmap_object is not None:
+                    mmap_object.close()
+        self.cube = None
+        self.cube_path = None
+
     def __Update_Metadata(self):
         if self.Metadata is None:
             return
@@ -240,7 +254,7 @@ class CubeAnalyzerWindow(QWidget):
             scan, spatial, spectral = shape
 
         self.Status.Status_AcquiredFrames_Value.setText(f"{scan}")
-        self.Status.Meta_ImageSize_Value_Value.setText(f"{spectral} × {spatial}")
+        self.Status.Meta_ImageSize_Value.setText(f"{spectral} × {spatial}")
 
         enabled = calibration.get("enabled", False)
         left_pixel = calibration.get("left_pixel")
@@ -290,6 +304,11 @@ class CubeAnalyzerWindow(QWidget):
         self.live_band_image = np.ascontiguousarray(band_image.T)
         self.live_band_index = band_range
         self.live_band_lines = self.cube.shape[0]
+
+    @pyqtSlot()
+    def __Band_Range_Changed(self):
+        if self.cube is not None:
+            self.__Update_Band_Image()
 
     def __Band_Slider_Changed(self, value):
         self.__Update_Band_Spinboxes()
@@ -399,23 +418,6 @@ class CubeAnalyzerWindow(QWidget):
                 flat[valid] = normalization / flat_reference[valid]
                 self.flat = flat.copy()
 
-    def __Update_Preview(self):
-        show_frame = self.ImagePreview.Preview_Mode_Button.isChecked()
-        if show_frame:
-            if self.latest_camera_image is None:
-                return
-            image = self.__Build_Band_Preview(self.latest_camera_image)
-
-            align_left = False
-
-        else:
-            if self.live_band_image is None:
-                return
-            image = self.live_band_image[:, :self.live_band_lines]
-            align_left = True
-
-        self.ImagePreview.Update_Preview(image, align_left = align_left)
-
     def __Image_Spectrum_Position_Selected(self, preview_mode, x, y):
         self.roi = None
         self.ImagePreview.PreviewLabel.clear_roi()
@@ -432,7 +434,6 @@ class CubeAnalyzerWindow(QWidget):
         x = int(np.clip(self.spectrum_x, 0, self.cube.shape[0] -1))
         y = int(np.clip(self.spectrum_y, 0, self.cube.shape[1] - 1))
 
-
         intensity = self.__Apply_Spectrum_Correction(self.cube[x, y, :], y)
 
         spectral_size = self.cube.shape[2]
@@ -445,6 +446,15 @@ class CubeAnalyzerWindow(QWidget):
 
         self.SpectrumPreview.set_spectrum(x_axis, intensity)
 
+    def __Apply_Spectrum_Correction(self, spectrum, spatial_y):
+        result = np.asarray(spectrum, dtype=np.float32).copy()
+        if self.dark is not None:
+            result -= self.dark[spatial_y, :]
+        if self.flat is not None:
+            result *= self.flat[spatial_y, :]
+
+        return result
+
     def __Update_Wavelength_Calibration(self):
         pixel_left = self.Status.Calibration_Wavelength_StartPixel_Spinbox.value()
         pixel_right = self.Status.Calibration_Wavelength_EndPixel_Spinbox.value()
@@ -456,9 +466,7 @@ class CubeAnalyzerWindow(QWidget):
             self.Status.Calibration_Wavelength_Value.setText("Invalid Pixel Range")
             return
 
-        if self.latest_camera_image is not None:
-            spectral_size = self.latest_camera_image.shape[1]
-        elif self.cube is not None:
+        if self.cube is not None:
             spectral_size = self.cube.shape[-1]
         else:
             spectral_size = self.Status.Calibration_Wavelength_EndPixel_Spinbox.maximum() + 1
