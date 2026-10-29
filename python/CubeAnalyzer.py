@@ -7,6 +7,7 @@ from datetime import datetime
 os.environ["QT_API"] = "pyqt6"
 
 from TestWindow import ImagePreviewWidgets, SpectrumPreviewWidgets, StatusWidgets
+from AnalysisTab import AnalysisWidgets
 import multiprocessing as mp
 import sys
 
@@ -65,13 +66,15 @@ class CubeAnalyzerWindow(QWidget):
         BodyLayout = QHBoxLayout()
         PreviewLayout =QVBoxLayout()
         StatusLayout =QVBoxLayout()
+        AnalysisLayout = QVBoxLayout()
 
-        self.init_Layout(PageLayout, FileLayout, BodyLayout, PreviewLayout, StatusLayout)
+        self.init_Layout(PageLayout, FileLayout, BodyLayout, PreviewLayout, StatusLayout, AnalysisLayout)
         self.setLayout(PageLayout)
 
-    def init_Layout(self, PageLayout, FileLayout, BodyLayout, PreviewLayout, StatusLayout):
+    def init_Layout(self, PageLayout, FileLayout, BodyLayout, PreviewLayout, StatusLayout, AnalysisLayout):
         BodyLayout.addLayout(PreviewLayout, stretch = 4)
         BodyLayout.addLayout(StatusLayout, stretch = 1)
+        BodyLayout.addLayout(AnalysisLayout, stretch = 2)
 
         PageLayout.addLayout(FileLayout)
         PageLayout.addLayout(BodyLayout)
@@ -79,6 +82,7 @@ class CubeAnalyzerWindow(QWidget):
         self.init_FileLayout(FileLayout)
         self.init_Preview(PreviewLayout)
         self.init_Status(StatusLayout)
+        self.init_Analysis(AnalysisLayout)
 
         self.EventProcess()
 
@@ -118,6 +122,10 @@ class CubeAnalyzerWindow(QWidget):
         self.Status = StatusWidgets()
         self.Status.Save_Button.hide()
         Layout.addWidget(self.Status)
+
+    def init_Analysis(self, Layout):
+        self.Analysis = AnalysisWidgets()
+        Layout.addWidget(self.Analysis)
 
     def EventProcess(self):
 
@@ -469,7 +477,10 @@ class CubeAnalyzerWindow(QWidget):
             x_axis = np.arange(spectral_size)
             self.SpectrumPreview.set_x_axis_mode(False)
 
-        self.SpectrumPreview.set_spectrum(x_axis, intensity)
+        intensity_T = self.__Transform_Spectrum(intensity)
+
+        self.SpectrumPreview.set_spectrum(x_axis, intensity_T)
+        return intensity
 
     def __Apply_Spectrum_Correction(self, spectrum, spatial_y):
         result = np.asarray(spectrum, dtype=np.float32).copy()
@@ -548,7 +559,9 @@ class CubeAnalyzerWindow(QWidget):
             x_axis = np.arange(spectral_size)
             self.SpectrumPreview.set_x_axis_mode(False)
 
-        self.SpectrumPreview.set_spectrum(x_axis, mean_spectrum)
+        mean_spectrum_T = self.__Transform_Spectrum(mean_spectrum)
+        self.SpectrumPreview.set_spectrum(x_axis, mean_spectrum_T)
+        return mean_spectrum
 
     @pyqtSlot(bool)
     def __Calibration_Mode_Changed(self, checked):
@@ -565,6 +578,51 @@ class CubeAnalyzerWindow(QWidget):
         # if self.calibration_enabled:
         self.__Update_Band_Spinboxes()
         self.__Update_Spectrum()
+
+    def __Reflectance_To_Absorbance(self, reflectance):
+        return -np.log10(np.clip(reflectance, 1E-6, None))
+
+    def __SNV(self, spectrum):
+        spectrum = np.asarray(spectrum, dtype=np.float32)
+        mean = np.nanmean(spectrum)
+        std = np.nanstd(spectrum)
+
+        if std <= 1E-12:
+            return spectrum
+        return (spectrum - mean) / std
+
+    def __Transform_Spectrum(self, reflectance):
+        mode = self.SpectrumPreview.Spectrum_Mode_Radio.checkedButton().text()
+        if mode == "Pseudo-Absorbance":
+            spectrum = self.__Reflectance_To_Absorbance(reflectance)
+        else:
+            spectrum = reflectance.copy()
+
+        if self.SpectrumPreview.SNV_Checkbox.isChecked():
+            spectrum = self.__SNV(spectrum)
+        return spectrum
+
+    def __Add_Current_ROI(self):
+        if self.roi is None:
+            spectrum_R = self.__Update_Spectrum()
+        else:
+            spectrum_R = self.__Update_ROI_Spectrum()
+
+        if spectrum_R is None:
+            QMessageBox.warning(self, "ROI", "Spectrum not found.")
+            return
+
+        material = self.AnalysisTab.A.Material_Combo.currentText().strip()
+        specimen = self.Analysis.Specimen_Edit.text().strip()
+
+        x0, y0, x1, y1 = self.roi
+        pixel_count = (x1 - x0 + 1) * (y1 - y0 + 1)
+        roi_id = f"ROI_{len(self.roi_dataset) + 1:04d}"
+        self.roi_dataset[roi_id] = {"material": material, "specimen": specimen, "cube_path":self.cube_path,
+                                    "roi": tuple(self.roi), "pixel_count": pixel_count, "wavelength": self.wavelength_range.copy(),
+                                    "reflectance": spectrum_R.copy(), "dark_path": self.dark_path, "flat_path": self.flat_path}
+        self.__Add_ROI_To_Tree(roi_id)
+
 
 
 

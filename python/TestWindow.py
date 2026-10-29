@@ -16,8 +16,9 @@ from queue import Empty
 
 from PyQt6.QtCore import (Qt, QObject, pyqtSignal, pyqtSlot, QTimer, QThread)
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel,
-                             QPushButton, QSlider, QCheckBox,
-                             QDoubleSpinBox, QComboBox, QSpinBox, QGroupBox, QFileDialog, QMessageBox, QLineEdit, QStyle)
+                             QPushButton, QSlider, QCheckBox, QRadioButton,
+                             QDoubleSpinBox, QComboBox, QSpinBox, QGroupBox, QFileDialog, QMessageBox, QLineEdit,
+                             QStyle, QButtonGroup)
 from superqt import QRangeSlider
 
 import pyqtgraph as pg
@@ -1465,9 +1466,21 @@ class SpectrumPreviewWidgets(QWidget):
         # self.EventProcess()
 
     def UI_Layout(self, Layout):
+        Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.SNV_Checkbox, self.Spectrum_Mode_Radio_R, self.Spectrum_Mode_Radio_A), 'Horizontal'))
         Layout.addWidget(self.plot)
 
     def UI_Component(self):
+        self.Spectrum_Mode_Radio_R = QRadioButton("Reflectance")
+        self.Spectrum_Mode_Radio_A = QRadioButton("Pseudo-Absorbance")
+        self.Spectrum_Mode_Radio = QButtonGroup(self)
+        self.Spectrum_Mode_Radio.addButton(self.Spectrum_Mode_Radio_R)
+        self.Spectrum_Mode_Radio.addButton(self.Spectrum_Mode_Radio_A)
+        self.Spectrum_Mode_Radio.setExclusive(True)
+        self.Spectrum_Mode_Radio_R.setChecked(True)
+
+        self.SNV_Checkbox = QCheckBox("SNV")
+        self.SNV_Checkbox.setChecked(False)
+
         self.plot = pg.PlotWidget()
         self.plot.setLabel("bottom", "Wavelength", units="nm")
         self.plot.setLabel("left", "Intensity", units="DN")
