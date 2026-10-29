@@ -254,7 +254,7 @@ class CubeAnalyzerWindow(QWidget):
         shape = data.get("shape")
 
         self.Status.Status_Camera_Value.setText("Cube Loaded")
-        self.Status.Meta_TimeStamp_Value.setText("--" if timestamp is None else f"{timestamp}")
+        self.Status.Meta_TimeStamp_Value.setText("--" if timestamp is None else f"{timestamp:.22}")
         self.Status.Meta_ExposureTime_Value.setText("--" if exposure is None else f"{exposure} s")
         self.Status.Meta_SensorTemp_Value.setText("--" if temperature is None else f"{temperature:.1f} °C")
         self.Status.Meta_Gain_Value.setText("--" if detector_mode is None else f" Mode {detector_mode}")
