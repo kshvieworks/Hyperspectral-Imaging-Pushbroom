@@ -24,6 +24,8 @@ class AnalysisWidgets(QWidget):
         super().__init__(parent)
         self.roi_dataset = {}
 
+        self.analysis_result = None
+
         Layout = QVBoxLayout()
         self.initUI(Layout)
         self.setLayout(Layout)
@@ -35,7 +37,9 @@ class AnalysisWidgets(QWidget):
     def UI_Layout(self, Layout):
 
         Temp_Layout = QVBoxLayout()
-        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.PCA_Plot, self.PCA_Button, self.PCA_Info_Label), 'Vertical'))
+        Temp_Layout.addWidget(self.PCA_Plot)
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Analysis_Mode_Combo, self.PCA_Button), 'Horizontal'))
+        Temp_Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.PCA_Info_Label, self.Best_Band_Label), 'Vertical'))
         Uqt.WidgetDesign.Layout_Frame_Layout(Layout, Temp_Layout, 'PCA Analysis')
 
         Temp_Layout = QVBoxLayout()
@@ -71,6 +75,11 @@ class AnalysisWidgets(QWidget):
         self.PCA_Plot.setLabel("left", "PC2")
         self.PCA_Plot.showGrid(x=True, y=True)
         self.PCA_Legend = self.PCA_Plot.addLegend()
+
+        self.Analysis_Mode_Combo = QComboBox()
+        self.Analysis_Mode_Combo.addItems(['PCA Score', 'PCA Loading', 'Wavelength Score'])
+        self.Best_Band_Label = QLabel("Best Band: --")
+
 
 
 

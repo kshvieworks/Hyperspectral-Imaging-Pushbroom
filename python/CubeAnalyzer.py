@@ -161,6 +161,7 @@ class CubeAnalyzerWindow(QWidget):
         self.Analysis.Add_ROI_Button.clicked.connect(self.__Add_Current_ROI)
         self.Analysis.Delete_ROI_Button.clicked.connect(self.__Delete_Selected_ROI)
         self.Analysis.PCA_Button.clicked.connect(self.__Calculate_PCA)
+        self.Analysis.Analysis_Mode_Combo.currentTextChanged.connect(lambda _: self.__Update_Analysis_Plot())
 
     def __Load_Cube(self):
         path = Uqt.WidgetFunction.Open_File(caption = "Load HSI Cube", directory = "", filter = "Numpy Cube (*.npy)")
@@ -712,13 +713,62 @@ class CubeAnalyzerWindow(QWidget):
             return
 
         pca = PCA(n_components=2)
+
         scores = pca.fit_transform(X)
         explained = 100 * pca.explained_variance_ratio_
 
-        # Plot
+        loadings = pca.components_.copy()
+
+        separation_score = None
+        if unique_materials.size == 2:
+            material_1 = unique_materials[0]
+            material_2 = unique_materials[1]
+
+            X1 = X[materials == material_1]
+            X2 = X[materials == material_2]
+            if (X1.shape[0] >= 2 and X2.shape[0] >= 2):
+                mean1 = np.mean(X1, axis=0)
+                mean2 = np.mean(X2, axis=0)
+
+                std1 = np.std(X1, axis=0, ddof = 1)
+                std2 = np.std(X2, axis=0, ddof = 1)
+
+                denominator = np.sqrt(std1**2 + std2**2)
+                separation_score = np.abs(mean1 - mean2) / np.maximum(denominator, 1E-12)
+
+        self.analysis_result = {"axis": reference_axis.copy(), "materials": materials.copy(), "unique_materials": unique_materials.copy(),
+                                "scores": scores.copy(), "explained": explained.copy(), "loadings": loadings.copy(), "separation": separation_score}
+        self.__Update_Analysis_Plot()
+
+
+    def __Update_Analysis_Plot(self):
+        if self.analysis_result is None:
+            return
+
+        result = self.analysis_result
+        mode = self.Analysis.Analysis_Mode_Combo.currentText()
+
         self.Analysis.PCA_Plot.clear()
+
         if self.Analysis.PCA_Legend is not None:
             self.Analysis.PCA_Legend.clear()
+
+        if mode == "PCA Score":
+            self.__Plot_PCA_Score(result)
+
+        elif mode == "PCA Loading":
+            self.__Plot_PCA_Loading(result)
+
+        elif mode == "Wavelength Score":
+            self.__Plot_Wavelength_Score(result)
+
+    def __Plot_PCA_Score(self, result):
+        scores = result["scores"]
+        materials = result["unique_materials"]
+        unique_materials = result["unique_materials"]
+        explained = result["explained"]
+
+        # Plot
         for index, material in enumerate(unique_materials):
             mask = (materials == material)
 
@@ -728,10 +778,61 @@ class CubeAnalyzerWindow(QWidget):
         # Plot Settings
         self.Analysis.PCA_Plot.setLabel("bottom", f"PC1 ({explained[0]:.1f}) %")
         self.Analysis.PCA_Plot.setLabel("left", f"PC2 ({explained[1]:.1f}) %")
-        self.Analysis.PCA_info_Label.setText(f"ROI: {len(records)} "
-                                             f"PC1: {explained[0]:.1f} %"
+        self.Analysis.PCA_Info_Label.setText(f"PC1: {explained[0]:.1f} %"
                                              f"PC2: {explained[1]:.1f} %"
                                              f"Total: {np.sum(explained):.1f} %")
+
+    def __Plot_PCA_Loading(self, result):
+        axis = result["axis"]
+        loadings = result["loadings"]
+        self.Analysis.PCA_Plot.plot(axis, loadings[0], name="PC1")
+        self.Analysis.PCA_Plot.plot(axis, loadings[1], name="PC2")
+        if self.calibration_enabled:
+            x_label = "Wavelength"
+            units = 'nm'
+        else:
+            x_label = "Spectral Pixel"
+            units = None
+
+        self.Analysis.PCA_Plot.setLabel("bottom", x_label, units=units)
+        self.Analysis.PCA_Plot.setLabel("left", "Loading")
+
+    def __Plot_Wavelength_Score(self, result):
+        score = result['separation']
+        if score is None:
+            self.Analysis.PCA_Info_Label.setText("Wavelength Score requires 2 materials with more than 2 ROI each")
+            return
+        axis = result['axis']
+        self.Analysis.PCA_Plot.plot(axis, score)
+        if self.calibration_enabled:
+            x_label = "Wavelength"
+            units = 'nm'
+        else:
+            x_label = "Spectral Pixel"
+            units = None
+        self.Analysis.PCA_Plot.setLabel("bottom", x_label, units=units)
+        self.Analysis.PCA_Plot.setLabel("left", "Separation Score")
+        self.__Update_Best_Bands(axis, score)
+
+    def __Update_Best_Bands(self, axis, score):
+        indices = self.__Find_Best_Bands(axis, score, top_n = 5, min_spacing = 10.0)
+        lines = []
+        for index in indices:
+            lines.append(f"{axis[index]:.1f} nm : {score[index]:.2f} ")
+        self.Analysis.Best_Band_Label.setText("Best Bands\n" + "\n".join(lines))
+
+    def __Find_Best_Bands(self, axis, score, top_n = 5, min_spacing = 10.0):
+        order = np.argsort(score)[::-1]
+        selected = []
+        for index in order:
+            if not np.isfinite(score[index]):
+                continue
+            if all(abs(axis[index] - axis[previous]) >= min_spacing for previous in selected):
+                    selected.append(index)
+            if (len(selected) >= top_n):
+                break
+        return selected
+
 
 if __name__ == '__main__':
     mp.freeze_support()

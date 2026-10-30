@@ -338,4 +338,3 @@ class StageWorker(QObject):
             self.motion_timer.stop()
             self.error.emit(f"{type(e).__name__}: {e}")
 
-
