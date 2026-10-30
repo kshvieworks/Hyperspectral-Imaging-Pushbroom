@@ -764,7 +764,7 @@ class CubeAnalyzerWindow(QWidget):
 
     def __Plot_PCA_Score(self, result):
         scores = result["scores"]
-        materials = result["unique_materials"]
+        materials = result["materials"]
         unique_materials = result["unique_materials"]
         explained = result["explained"]
 
