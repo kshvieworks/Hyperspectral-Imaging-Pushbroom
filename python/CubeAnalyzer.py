@@ -2,6 +2,8 @@ import json
 import numpy as np
 import shutil
 import sys
+from sklearn.decomposition import PCA
+import pyqtgraph as pg
 import os
 from datetime import datetime
 os.environ["QT_API"] = "pyqt6"
@@ -11,9 +13,9 @@ from AnalysisTab import AnalysisWidgets
 import multiprocessing as mp
 import sys
 
-from PyQt6.QtCore import pyqtSlot
+from PyQt6.QtCore import pyqtSlot, Qt
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QCheckBox,
-                             QMessageBox, QFileDialog)
+                             QMessageBox, QFileDialog, QTreeWidgetItem)
 
 import Utility_Pyqt as Uqt
 
@@ -56,6 +58,9 @@ class CubeAnalyzerWindow(QWidget):
         self.spectrum_y = 0
         self.calibration_enabled = False
         self.wavelength_range = None
+
+    # Analyzer
+        self.roi_counter = 0
 
     # Miscellaneous Field
         self.live_band_image = None
@@ -140,6 +145,9 @@ class CubeAnalyzerWindow(QWidget):
         self.ImagePreview.spectrum_position_selected.connect(self.__Image_Spectrum_Position_Selected)
         self.ImagePreview.roi_selected.connect(self.__Image_ROI_Selected)
 
+        self.SpectrumPreview.Spectrum_Mode_Radio.buttonClicked.connect(lambda _: self.__Spectrum_Transform_Changed())
+        self.SpectrumPreview.SNV_Checkbox.toggled.connect(lambda _: self.__Spectrum_Transform_Changed())
+
         self.Status.Calibration_Wavelength_StartPixel_Spinbox.valueChanged.connect(self.__Update_Wavelength_Calibration)
         self.Status.Calibration_Wavelength_EndPixel_Spinbox.valueChanged.connect(self.__Update_Wavelength_Calibration)
         self.Status.Calibration_Wavelength_Startwl_Spinbox.valueChanged.connect(self.__Update_Wavelength_Calibration)
@@ -149,6 +157,10 @@ class CubeAnalyzerWindow(QWidget):
         self.Status.Band1_L_Spinbox.editingFinished.connect(self.__Band_Spinbox_Changed)
         self.Status.Band1_R_Spinbox.editingFinished.connect(self.__Band_Spinbox_Changed)
         # self.Status.Save_Button.clicked.connect(self.__Save_HSI_Cube)
+
+        self.Analysis.Add_ROI_Button.clicked.connect(self.__Add_Current_ROI)
+        self.Analysis.Delete_ROI_Button.clicked.connect(self.__Delete_Selected_ROI)
+        self.Analysis.PCA_Button.clicked.connect(self.__Calculate_PCA)
 
     def __Load_Cube(self):
         path = Uqt.WidgetFunction.Open_File(caption = "Load HSI Cube", directory = "", filter = "Numpy Cube (*.npy)")
@@ -579,6 +591,12 @@ class CubeAnalyzerWindow(QWidget):
         self.__Update_Band_Spinboxes()
         self.__Update_Spectrum()
 
+    def __Spectrum_Transform_Changed(self):
+        if self.roi is not None:
+            self.__Update_ROI_Spectrum()
+        else:
+            self.__Update_Spectrum()
+
     def __Reflectance_To_Absorbance(self, reflectance):
         return -np.log10(np.clip(reflectance, 1E-6, None))
 
@@ -604,27 +622,116 @@ class CubeAnalyzerWindow(QWidget):
 
     def __Add_Current_ROI(self):
         if self.roi is None:
-            spectrum_R = self.__Update_Spectrum()
+            QMessageBox.warning(self, "ROI", "Select an ROI first")
+            return
+            # spectrum_R = self.__Update_Spectrum()
         else:
-            spectrum_R = self.__Update_ROI_Spectrum()
+            spectrum = self.__Update_ROI_Spectrum()
 
-        if spectrum_R is None:
+        if spectrum is None:
             QMessageBox.warning(self, "ROI", "Spectrum not found.")
             return
 
-        material = self.AnalysisTab.A.Material_Combo.currentText().strip()
-        specimen = self.Analysis.Specimen_Edit.text().strip()
+        material = self.Analysis.Material_Combo.currentText().strip()
+        specimen = self.Analysis.Specimen_Combo.currentText().strip()
+
+        if not material:
+            QMessageBox.warning(self, "Material", "Select an material")
+            return
+        if not specimen:
+            QMessageBox.warning(self, "Specimen", "Enter a specimen ID")
+            return
+
+        if self.Analysis.Specimen_Combo.findText(specimen) < 0:
+            self.Analysis.Specimen_Combo.addItem(specimen)
 
         x0, y0, x1, y1 = self.roi
         pixel_count = (x1 - x0 + 1) * (y1 - y0 + 1)
-        roi_id = f"ROI_{len(self.roi_dataset) + 1:04d}"
-        self.roi_dataset[roi_id] = {"material": material, "specimen": specimen, "cube_path":self.cube_path,
-                                    "roi": tuple(self.roi), "pixel_count": pixel_count, "wavelength": self.wavelength_range.copy(),
-                                    "reflectance": spectrum_R.copy(), "dark_path": self.dark_path, "flat_path": self.flat_path}
+        self.roi_counter += 1
+
+        roi_id = f"ROI_{self.roi_counter:04d}"
+        if (self.calibration_enabled and self.wavelength_range is not None):
+            spectral_axis = self.wavelength_range.copy()
+        else:
+            spectral_axis = np.arange(spectrum.size, dtype=np.float32)
+
+        self.Analysis.roi_dataset[roi_id] = {"material": material, "specimen": specimen, "cube_path":self.cube_path,
+                                             "roi": tuple(self.roi), "pixel_count": pixel_count, "spectral_axis": spectral_axis,
+                                             "spectrum": spectrum.copy(), "dark_path": self.dark_path, "flat_path": self.flat_path}
         self.__Add_ROI_To_Tree(roi_id)
 
+    def __Add_ROI_To_Tree(self, roi_id):
+        record = (self.Analysis.roi_dataset[roi_id])
+        cube_name = os.path.basename(record["cube_path"])
+        item = QTreeWidgetItem([record["material"], record["specimen"], roi_id, str(record["pixel_count"]), cube_name])
+        item.setData(0, Qt.ItemDataRole.UserRole, roi_id)
+        self.Analysis.Sample_Tree.addTopLevelItem(item)
 
+    def __Delete_Selected_ROI(self):
+        item = self.Analysis.Sample_Tree.currentItem()
+        if item is None:
+            return
+        roi_id = item.data(0, Qt.ItemDataRole.UserRole)
+        if roi_id in self.Analysis.roi_dataset:
+            del self.Analysis.roi_dataset[roi_id]
+        index = (self.Analysis.Sample_Tree.indexOfTopLevelItem(item))
+        self.Analysis.Sample_Tree.takeTopLevelItem(index)
 
+    def __Calculate_PCA(self):
+        dataset = self.Analysis.roi_dataset
+        if len(dataset) < 2:
+            QMessageBox.warning(self, "PCA", "At least two ROI spectra are required")
+            return
+
+        records = list(dataset.values())
+        materials = np.asarray([record["material"] for record in records])
+        unique_materials = np.unique(materials)
+        if unique_materials.size < 2:
+            QMessageBox.warning(self, "PCA", "At least two materials are required")
+            return
+
+        # axes verification
+        reference_axis = records[0]["spectral_axis"]
+        for record in records[1:]:
+            axis = record["spectral_axis"]
+            if (axis.shape != reference_axis.shape or not np.allclose(axis, reference_axis, atol=0.5)):
+                QMessageBox.warning(self, "PCA", "Spectral axes do not match")
+                return
+
+        # Transform A/R & SNV
+        spectra = []
+        for record in records:
+            spectrum = record["spectrum"]
+            transformed = self.__Transform_Spectrum(spectrum)
+            spectra.append(transformed)
+        X =np.asarray(spectra, dtype=np.float32)
+
+        # Calculate PCA
+        if not np.all(np.isfinite(X)):
+            QMessageBox.warning(self, "PCA", "Dataset contains NaN or inf")
+            return
+
+        pca = PCA(n_components=2)
+        scores = pca.fit_transform(X)
+        explained = 100 * pca.explained_variance_ratio_
+
+        # Plot
+        self.Analysis.PCA_Plot.clear()
+        if self.Analysis.PCA_Legend is not None:
+            self.Analysis.PCA_Legend.clear()
+        for index, material in enumerate(unique_materials):
+            mask = (materials == material)
+
+            self.Analysis.PCA_Plot.plot(scores[mask, 0], scores[mask, 1], pen=None, symbol='o', symbolSize = 9,
+                                        symbolBrush = pg.intColor(index, hues=len(unique_materials)), name=str(material))
+
+        # Plot Settings
+        self.Analysis.PCA_Plot.setLabel("bottom", f"PC1 ({explained[0]:.1f}) %")
+        self.Analysis.PCA_Plot.setLabel("left", f"PC2 ({explained[1]:.1f}) %")
+        self.Analysis.PCA_info_Label.setText(f"ROI: {len(records)} "
+                                             f"PC1: {explained[0]:.1f} %"
+                                             f"PC2: {explained[1]:.1f} %"
+                                             f"Total: {np.sum(explained):.1f} %")
 
 if __name__ == '__main__':
     mp.freeze_support()
