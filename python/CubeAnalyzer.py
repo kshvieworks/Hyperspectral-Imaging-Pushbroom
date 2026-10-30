@@ -15,7 +15,7 @@ import sys
 
 from PyQt6.QtCore import pyqtSlot, Qt
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QCheckBox,
-                             QMessageBox, QFileDialog, QTreeWidgetItem)
+                             QMessageBox, QFileDialog, QTreeWidgetItem, QLabel, QDoubleSpinBox)
 
 import Utility_Pyqt as Uqt
 
@@ -104,9 +104,10 @@ class CubeAnalyzerWindow(QWidget):
         self.Flat_Button = QPushButton("Flat File...")
 
         Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Cube_Button, self.Metadata_Button), "Horizontal"))
-        Layout.addStretch()
         Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Dark_Enable_Checkbox, self.Dark_Button,
                                                          self.Flat_Enable_Checkbox, self.Flat_Button), "Horizontal"))
+        Layout.addStretch()
+
 
     def init_Preview(self, Layout):
 
@@ -120,7 +121,24 @@ class CubeAnalyzerWindow(QWidget):
         self.ImagePreview.Save_Preview_Button.hide()
         self.ImagePreview.Preview_Mode_Button.hide()
 
+        self.Percentile_L_Spinbox = QDoubleSpinBox()
+        self.Percentile_L_Spinbox.setRange(0.0, 100.0)
+        self.Percentile_L_Spinbox.setDecimals(1)
+        self.Percentile_L_Spinbox.setValue(1.0)
+        self.Percentile_L_Spinbox.setSuffix('%')
+        self.Percentile_R_Spinbox = QDoubleSpinBox()
+        self.Percentile_R_Spinbox.setRange(0.0, 100.0)
+        self.Percentile_R_Spinbox.setDecimals(1)
+        self.Percentile_R_Spinbox.setValue(99.0)
+        self.Percentile_R_Spinbox.setSuffix('%')
+        self.Percentile_L_Spinbox.setFixedWidth(100)
+        self.Percentile_R_Spinbox.setFixedWidth(100)
+
+
         Layout.addWidget(self.ImagePreview)
+
+        Layout.addLayout(Uqt.WidgetDesign.Layout_Widget((self.Percentile_L_Spinbox, QLabel("Percentile"), self.Percentile_R_Spinbox), "Horizontal"))
+
         Layout.addWidget(self.SpectrumPreview)
 
     def init_Status(self, Layout):
@@ -145,6 +163,9 @@ class CubeAnalyzerWindow(QWidget):
         self.ImagePreview.spectrum_position_selected.connect(self.__Image_Spectrum_Position_Selected)
         self.ImagePreview.roi_selected.connect(self.__Image_ROI_Selected)
 
+        self.Percentile_L_Spinbox.editingFinished.connect(self.__Percentile_Changed)
+        self.Percentile_R_Spinbox.editingFinished.connect(self.__Percentile_Changed)
+
         self.SpectrumPreview.Spectrum_Mode_Radio.buttonClicked.connect(lambda _: self.__Spectrum_Transform_Changed())
         self.SpectrumPreview.SNV_Checkbox.toggled.connect(lambda _: self.__Spectrum_Transform_Changed())
 
@@ -162,6 +183,7 @@ class CubeAnalyzerWindow(QWidget):
         self.Analysis.Delete_ROI_Button.clicked.connect(self.__Delete_Selected_ROI)
         self.Analysis.PCA_Button.clicked.connect(self.__Calculate_PCA)
         self.Analysis.Analysis_Mode_Combo.currentTextChanged.connect(lambda _: self.__Update_Analysis_Plot())
+
 
     def __Load_Cube(self):
         path = Uqt.WidgetFunction.Open_File(caption = "Load HSI Cube", directory = "", filter = "Numpy Cube (*.npy)")
@@ -576,6 +598,26 @@ class CubeAnalyzerWindow(QWidget):
         self.SpectrumPreview.set_spectrum(x_axis, mean_spectrum_T)
         return mean_spectrum
 
+    def __Percentile_Changed(self):
+        if self.live_band_image is None:
+            return
+        p_low = self.Percentile_L_Spinbox.value()
+        p_high = self.Percentile_R_Spinbox.value()
+        if p_low >= p_high:
+            return
+        image = np.asarray(self.live_band_image, dtype=np.float32)
+        valid = image[np.isfinite(image)]
+        if valid.size == 0:
+            return
+        vmin, vmax = np.percentile(valid, [p_low, p_high])
+        slider = self.ImagePreview.ColorRange_Slider
+        vmin = int(np.clip(np.floor(vmin), slider.minimum(), slider.maximum()))
+        vmax = int(np.clip(np.ceil(vmax),  slider.minimum(), slider.maximum()))
+
+        if vmax <= vmin:
+            vmax = min(vmin + 1, slider.maximum())
+        slider.setValue((vmin, vmax))
+
     @pyqtSlot(bool)
     def __Calibration_Mode_Changed(self, checked):
         if checked:
@@ -692,17 +734,24 @@ class CubeAnalyzerWindow(QWidget):
             return
 
         # axes verification
-        reference_axis = records[0]["spectral_axis"]
+        full_reference_axis = records[0]["spectral_axis"]
         for record in records[1:]:
             axis = record["spectral_axis"]
-            if (axis.shape != reference_axis.shape or not np.allclose(axis, reference_axis, atol=0.5)):
+            if (axis.shape != full_reference_axis.shape or not np.allclose(axis, full_reference_axis, atol=0.5)):
                 QMessageBox.warning(self, "PCA", "Spectral axes do not match")
                 return
+
+        # Current Band Range
+        band_left, band_right = self.Status.Band1_Slider.value()
+        if band_right - band_left < 1:
+            QMessageBox.warning(self, "PCA", "Select at least two spectral channels")
+            return
+        reference_axis = full_reference_axis[band_left:band_right +1]
 
         # Transform A/R & SNV
         spectra = []
         for record in records:
-            spectrum = record["spectrum"]
+            spectrum = record["spectrum"][band_left:band_right +1]
             transformed = self.__Transform_Spectrum(spectrum)
             spectra.append(transformed)
         X =np.asarray(spectra, dtype=np.float32)
@@ -736,8 +785,9 @@ class CubeAnalyzerWindow(QWidget):
                 denominator = np.sqrt(std1**2 + std2**2)
                 separation_score = np.abs(mean1 - mean2) / np.maximum(denominator, 1E-12)
 
-        self.analysis_result = {"axis": reference_axis.copy(), "materials": materials.copy(), "unique_materials": unique_materials.copy(),
-                                "scores": scores.copy(), "explained": explained.copy(), "loadings": loadings.copy(), "separation": separation_score}
+        self.analysis_result = {"axis": reference_axis.copy(), "band_range": (band_left, band_right),"materials": materials.copy(),
+                                "unique_materials": unique_materials.copy(), "scores": scores.copy(), "explained": explained.copy(),
+                                "loadings": loadings.copy(), "separation": separation_score}
         self.__Update_Analysis_Plot()
 
 
@@ -767,6 +817,12 @@ class CubeAnalyzerWindow(QWidget):
         materials = result["materials"]
         unique_materials = result["unique_materials"]
         explained = result["explained"]
+        if self.calibration_enabled:
+            axis = result["axis"]
+            range_text = f"{axis[0]:.1f} - {axis[-1]:.1f} nm"
+        else:
+            left, right = result["band_range"]
+            range_text = f"Pixel {left} - {right}"
 
         # Plot
         for index, material in enumerate(unique_materials):
@@ -778,7 +834,8 @@ class CubeAnalyzerWindow(QWidget):
         # Plot Settings
         self.Analysis.PCA_Plot.setLabel("bottom", f"PC1 ({explained[0]:.1f}) %")
         self.Analysis.PCA_Plot.setLabel("left", f"PC2 ({explained[1]:.1f}) %")
-        self.Analysis.PCA_Info_Label.setText(f"PC1: {explained[0]:.1f} %"
+        self.Analysis.PCA_Info_Label.setText(f"Band: {range_text}\n"
+                                             f"PC1: {explained[0]:.1f} %"
                                              f"PC2: {explained[1]:.1f} %"
                                              f"Total: {np.sum(explained):.1f} %")
 
@@ -817,8 +874,14 @@ class CubeAnalyzerWindow(QWidget):
     def __Update_Best_Bands(self, axis, score):
         indices = self.__Find_Best_Bands(axis, score, top_n = 5, min_spacing = 10.0)
         lines = []
-        for index in indices:
-            lines.append(f"{axis[index]:.1f} nm : {score[index]:.2f} ")
+
+        if self.calibration_enabled:
+            for index in indices:
+                lines.append(f"{axis[index]:.1f} nm : {score[index]:.2f} ")
+        else:
+            for index in indices:
+                lines.append(f"{axis[index]:.0f} : {score[index]:.2f} ")
+
         self.Analysis.Best_Band_Label.setText("Best Bands\n" + "\n".join(lines))
 
     def __Find_Best_Bands(self, axis, score, top_n = 5, min_spacing = 10.0):

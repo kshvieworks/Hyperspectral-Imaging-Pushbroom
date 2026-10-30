@@ -1408,8 +1408,8 @@ class ImagePreviewWidgets(QWidget):
         self.ColorRange_Slider.valueChanged.connect(self.Update_Display)
         self.PreviewLabel.pixel_clicked.connect(self.__Image_Clicked)
         self.PreviewLabel.roi_selected.connect(self.__ROI_Selected)
-        self.CRange_L_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(value, self.ColorRange_Slider.value()[1], self.ColorRange_Slider))
-        self.CRange_R_Spinbox.valueChanged.connect(lambda value: Uqt.SliderHelper.RangeSpinChanged(self.ColorRange_Slider.value()[0], value, self.ColorRange_Slider))
+        self.CRange_L_Spinbox.editingFinished.connect(self.__Color_Range_Spinbox_Changed)
+        self.CRange_R_Spinbox.editingFinished.connect(self.__Color_Range_Spinbox_Changed)
         self.ColorRange_Slider.valueChanged.connect(lambda values: Uqt.SliderHelper.RangeSliderChanged(self.CRange_L_Spinbox, self.CRange_R_Spinbox, values))
 
     def Update_Preview(self, Image, align_left=False):
@@ -1450,6 +1450,13 @@ class ImagePreviewWidgets(QWidget):
 
     def __Correction_State_Changed(self):
         self.correction_state_changed.emit(self.Dark_Enable_Checkbox.isChecked(), self.Flat_Enable_Checkbox.isChecked())
+
+    def __Color_Range_Spinbox_Changed(self):
+        vmin = self.CRange_L_Spinbox.value()
+        vmax = self.CRange_R_Spinbox.value()
+        if vmin >= vmax:
+            return
+        self.ColorRange_Slider.setValue(vmin, vmax)
 
 
 class SpectrumPreviewWidgets(QWidget):
